@@ -100,11 +100,10 @@ def run_whisper(
     ]
     if language:
         cmd.extend(["--language", language])
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd)
     if result.returncode != 0:
-        print(f"Whisper failed: {result.stderr}", file=sys.stderr)
+        print("Whisper failed", file=sys.stderr)
         sys.exit(1)
-    print(result.stdout)
 
 
 def parse_srt_timestamp(ts: str) -> float:
