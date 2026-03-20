@@ -1,0 +1,10 @@
+name: video2pr
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - ffmpeg
+  - pip
+  - pip:
+      - openai-whisper
