@@ -1,6 +1,18 @@
 # video2PR
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill that converts meeting video recordings into structured context for coding assistants — transcripts with timestamps, speaker attribution, action items, decisions, and a codebase-grounded implementation plan.
+An AI coding assistant skill that converts meeting video recordings into structured context — transcripts with timestamps, speaker attribution, action items, decisions, and a codebase-grounded implementation plan. Works with Claude Code, OpenAI Codex CLI, and GitHub Copilot CLI.
+
+## Cross-Platform Support
+
+video2PR works with multiple AI coding assistants:
+
+| Platform | Skill location | Status |
+|----------|---------------|--------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `.claude/skills/video2pr/` | Full support |
+| [OpenAI Codex CLI](https://github.com/openai/codex) | `.agents/skills/video2pr/` | Full support |
+| [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) | `.github/skills/video2pr/` | Full support |
+
+All platforms share the same Python scripts in `scripts/` — only the SKILL.md frontmatter differs.
 
 ## Getting Started
 
@@ -13,17 +25,29 @@ conda activate video2pr
 
 ### 2. Install the skill
 
-Copy `.claude/skills/video2pr/` into your project's `.claude/skills/` directory:
+Copy the `scripts/` directory and the skill definition for your platform into your project:
 
 ```bash
+# Scripts (required for all platforms)
+cp -r scripts /path/to/your-project/scripts
+
+# Claude Code
 cp -r .claude/skills/video2pr /path/to/your-project/.claude/skills/
+
+# Codex CLI
+cp -r .agents/skills/video2pr /path/to/your-project/.agents/skills/
+
+# Copilot CLI
+cp -r .github/skills/video2pr /path/to/your-project/.github/skills/
+mkdir -p /path/to/your-project/.github/agents
+cp .github/agents/video2pr.agent.md /path/to/your-project/.github/agents/
 ```
 
 Also copy `environment.yml` if your project doesn't already have one.
 
 ### 3. Run it
 
-In Claude Code, from your project directory:
+In your coding assistant, from your project directory:
 
 ```
 /video2pr path/to/meeting.mp4
@@ -45,15 +69,15 @@ If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.d
 
 ```bash
 # Detect language
-conda run -n video2pr python .claude/skills/video2pr/scripts/transcribe.py \
+conda run -n video2pr python scripts/transcribe.py \
   --input audio.wav --detect-language
 
 # Transcribe with explicit language
-conda run -n video2pr python .claude/skills/video2pr/scripts/transcribe.py \
+conda run -n video2pr python scripts/transcribe.py \
   --input audio.wav --output-dir out --model base --language en
 
 # Convert an external transcript
-conda run -n video2pr python .claude/skills/video2pr/scripts/convert_transcript.py \
+conda run -n video2pr python scripts/convert_transcript.py \
   --input meeting.vtt --output-dir out
 ```
 

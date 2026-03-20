@@ -5,13 +5,12 @@ description: >-
   Extracts audio, transcribes with timestamps, analyzes the codebase
   against what was discussed, and produces a concrete plan of what to
   build or change. Argument: path to a video file.
-allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Glob
-  - EnterPlanMode
-  - ExitPlanMode
+license: MIT
+compatibility: "Requires conda, ffmpeg, and Python 3.13+. Install with: conda env create -f environment.yml"
+metadata:
+  author: douglas125
+  version: "1.0"
+allowed-tools: shell read_file apply_patch list_dir grep_files
 ---
 
 # video2pr
@@ -109,7 +108,7 @@ The default model is `small` (good balance of speed and accuracy). For faster bu
 
 ### Phase 3d: Speaker Enrichment (conditional)
 
-If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3c: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done by Claude directly (no script needed) — compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
+If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3c: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done directly (no script needed) — compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
 
 ## Phase 4: Analyze Transcript
 
@@ -150,7 +149,7 @@ For each item, record:
 
 ### Step 5b: Scan Codebase
 
-For each actionable item, use Glob and Read to search the codebase. Classify each item:
+For each actionable item, search the codebase using file listing and content search tools. Classify each item:
 
 - **Already exists** — the functionality or fix is already in place. Cite specific file paths and function/class names.
 - **Partially exists** — some relevant code exists but gaps remain. Cite existing code and describe what's missing.
@@ -211,9 +210,9 @@ Task 3 (independent)
 - <item> — <reason>
 ```
 
-### Step 5e: Enter Plan Mode
+### Step 5e: Present Plan for Review
 
-After writing `plan.md`, use `EnterPlanMode` to present the implementation plan to the user for review. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize before proceeding. Use `ExitPlanMode` once the user confirms the plan.
+After writing `plan.md`, present the implementation plan to the user for review and confirmation before proceeding. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize.
 
 ## Phase 6: Generate Summary
 
