@@ -18,6 +18,11 @@ allowed-tools:
 
 Process a meeting recording into a transcript, structured summary, and codebase-grounded implementation plan.
 
+**Important — scope rules:**
+- The **codebase** is the repository root (the current working directory where this skill is invoked). All file scanning, analysis, and modifications must stay within this repository.
+- The video file path is an **input artifact only**. Its parent directory is unrelated to the codebase — do not scan, analyze, or modify files there.
+- The only new directory created is `.video2pr/` inside the repo root for output files.
+
 ## Phase 1: Dependency Check
 
 Run the dependency checker:
@@ -150,7 +155,7 @@ For each item, record:
 
 ### Step 5b: Scan Codebase
 
-For each actionable item, use Glob and Read to search the codebase. Classify each item:
+For each actionable item, use Glob and Read to search the codebase **within the repository root** — not the video file's directory. Classify each item:
 
 - **Already exists** — the functionality or fix is already in place. Cite specific file paths and function/class names.
 - **Partially exists** — some relevant code exists but gaps remain. Cite existing code and describe what's missing.
