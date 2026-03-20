@@ -181,6 +181,12 @@ def transcribe_single(audio_path: Path, output_dir: Path, model: str) -> None:
         target_srt = output_dir / "transcript.srt"
         whisper_srt.rename(target_srt)
 
+    # Clean up extra whisper output formats
+    for ext in (".tsv", ".txt", ".vtt"):
+        extra = output_dir / f"{stem}{ext}"
+        if extra.exists():
+            extra.unlink()
+
 
 def transcribe_chunked(
     audio_path: Path, output_dir: Path, model: str, chunk_duration: int = 1800
