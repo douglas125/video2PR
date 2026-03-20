@@ -20,8 +20,9 @@ All platforms share the same Python scripts in `scripts/` — only the SKILL.md 
 
 ```bash
 conda env create -f environment.yml
-conda activate video2pr
 ```
+
+The agent runs commands via `conda run -n video2pr`, so `conda activate` is not needed.
 
 ### 2. Install the skill
 
