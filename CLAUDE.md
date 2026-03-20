@@ -16,7 +16,11 @@ Use the `/video2pr <path>` skill to process a video recording.
 ## Project Structure
 
 - `environment.yml` — Conda environment definition
-- `.claude/skills/video2pr/` — Skill definition and scripts
+- `scripts/` — Platform-neutral Python scripts (audio extraction, transcription, etc.)
+- `.claude/skills/video2pr/` — Claude Code skill definition (SKILL.md only)
+- `.agents/skills/video2pr/` — Codex CLI skill definition
+- `.github/skills/video2pr/` — Copilot CLI skill definition
+- `.github/agents/` — Copilot agent definition
 - `.video2pr/` — Runtime output directory (per-video, gitignored)
 
 ## Git Workflow

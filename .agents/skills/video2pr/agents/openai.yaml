@@ -1,0 +1,8 @@
+interface:
+  display_name: "Video to PR"
+  short_description: "Convert meeting recordings into implementation plans"
+  brand_color: "#4A90D9"
+  default_prompt: "Process this video recording and create an implementation plan"
+
+policy:
+  allow_implicit_invocation: true
