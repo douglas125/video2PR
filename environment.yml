@@ -8,3 +8,4 @@ dependencies:
   - pip
   - pip:
       - openai-whisper
+      - python-docx

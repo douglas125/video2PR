@@ -64,20 +64,43 @@ def split_audio(audio_path: Path, chunk_duration: int, temp_dir: Path) -> list[P
     return chunks
 
 
-def run_whisper(audio_path: Path, output_dir: Path, model: str) -> None:
-    """Run whisper on an audio file."""
-    result = subprocess.run(
-        [
-            "whisper",
-            str(audio_path),
-            "--model", model,
-            "--word_timestamps", "True",
-            "--output_format", "all",
-            "--output_dir", str(output_dir),
+def detect_language(audio_path: Path, model_name: str = "base") -> dict:
+    """Detect language from the first 30 seconds of audio using Whisper's Python API."""
+    import whisper
+
+    model = whisper.load_model(model_name)
+    audio = whisper.load_audio(str(audio_path))
+    audio = audio[: 30 * 16000]  # first 30 seconds
+    audio = whisper.pad_or_trim(audio)
+    mel = whisper.log_mel_spectrogram(audio).to(model.device)
+    _, probs = model.detect_language(mel)
+    sorted_langs = sorted(probs.items(), key=lambda x: x[1], reverse=True)
+    top = sorted_langs[0]
+    return {
+        "language": top[0],
+        "confidence": top[1],
+        "alternatives": [
+            {"language": lang, "confidence": prob}
+            for lang, prob in sorted_langs[1:6]
         ],
-        capture_output=True,
-        text=True,
-    )
+    }
+
+
+def run_whisper(
+    audio_path: Path, output_dir: Path, model: str, language: str | None = None
+) -> None:
+    """Run whisper on an audio file."""
+    cmd = [
+        "whisper",
+        str(audio_path),
+        "--model", model,
+        "--word_timestamps", "True",
+        "--output_format", "all",
+        "--output_dir", str(output_dir),
+    ]
+    if language:
+        cmd.extend(["--language", language])
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Whisper failed: {result.stderr}", file=sys.stderr)
         sys.exit(1)
@@ -164,9 +187,11 @@ def offset_json_segments(segments: list[dict], offset_seconds: float) -> list[di
     return result
 
 
-def transcribe_single(audio_path: Path, output_dir: Path, model: str) -> None:
+def transcribe_single(
+    audio_path: Path, output_dir: Path, model: str, language: str | None = None
+) -> None:
     """Transcribe a single audio file directly."""
-    run_whisper(audio_path, output_dir, model)
+    run_whisper(audio_path, output_dir, model, language=language)
 
     # Whisper outputs files named after the input audio stem
     stem = audio_path.stem
@@ -189,7 +214,11 @@ def transcribe_single(audio_path: Path, output_dir: Path, model: str) -> None:
 
 
 def transcribe_chunked(
-    audio_path: Path, output_dir: Path, model: str, chunk_duration: int = 1800
+    audio_path: Path,
+    output_dir: Path,
+    model: str,
+    chunk_duration: int = 1800,
+    language: str | None = None,
 ) -> None:
     """Transcribe long audio by splitting into chunks and merging."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -207,7 +236,7 @@ def transcribe_chunked(
 
             chunk_out = tmp_dir / f"chunk_{i:04d}_out"
             chunk_out.mkdir(exist_ok=True)
-            run_whisper(chunk_path, chunk_out, model)
+            run_whisper(chunk_path, chunk_out, model, language=language)
 
             # Read chunk SRT
             chunk_srt_path = chunk_out / f"{chunk_path.stem}.srt"
@@ -237,22 +266,41 @@ def transcribe_chunked(
 def main():
     parser = argparse.ArgumentParser(description="Transcribe audio using Whisper")
     parser.add_argument("--input", required=True, help="Path to input audio file")
-    parser.add_argument("--output-dir", required=True, help="Output directory")
+    parser.add_argument("--output-dir", help="Output directory (required unless --detect-language)")
     parser.add_argument(
         "--model",
         default="base",
         choices=["base", "medium", "large"],
         help="Whisper model size (default: base)",
     )
+    parser.add_argument(
+        "--language",
+        help="Language code to pass to Whisper (e.g. en, es, pt), skipping auto-detection",
+    )
+    parser.add_argument(
+        "--detect-language",
+        action="store_true",
+        help="Detect language from audio and output JSON to stdout (always uses base model)",
+    )
     args = parser.parse_args()
 
     audio_path = Path(args.input).resolve()
-    output_dir = Path(args.output_dir).resolve()
 
     if not audio_path.exists():
         print(f"Input file not found: {audio_path}", file=sys.stderr)
         sys.exit(1)
 
+    # Language detection mode
+    if args.detect_language:
+        result = detect_language(audio_path, model_name="base")
+        print(json.dumps(result, indent=2))
+        return
+
+    if not args.output_dir:
+        print("--output-dir is required for transcription", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = Path(args.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     duration = get_audio_duration(audio_path)
@@ -260,9 +308,9 @@ def main():
 
     # Use chunking for files over 30 minutes
     if duration > 1800:
-        transcribe_chunked(audio_path, output_dir, args.model)
+        transcribe_chunked(audio_path, output_dir, args.model, language=args.language)
     else:
-        transcribe_single(audio_path, output_dir, args.model)
+        transcribe_single(audio_path, output_dir, args.model, language=args.language)
 
     print("Transcription complete.")
 

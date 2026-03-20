@@ -45,9 +45,13 @@ Set up the output directory:
 mkdir -p .video2pr/<video-basename>
 ```
 
-## Phase 3: Extract Audio & Transcribe
+**Check for external transcript:** Search for transcript files in the same directory as the video, matching the video basename with extensions: `.sbv`, `.vtt`, `.txt`, `.docx`. Also accept a user-provided transcript path. If found, report: "Found external transcript: meeting.vtt (MS Teams VTT format)"
 
-Run within the `video2pr` conda environment:
+## Phase 3: Extract & Transcribe
+
+### Phase 3a: Extract Audio
+
+Always extract audio (needed for language detection even with external transcripts):
 
 ```bash
 conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/extract_audio.py \
@@ -55,20 +59,60 @@ conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/extract_audio.py \
   --output-dir ".video2pr/<video-basename>"
 ```
 
-```bash
-conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/transcribe.py \
-  --input ".video2pr/<video-basename>/audio.wav" \
-  --output-dir ".video2pr/<video-basename>" \
-  --model base
-```
+### Phase 3b: Check for External Transcript
+
+If an external transcript was found in Phase 2:
+
+- **With timestamps** → Convert and skip Whisper, go to Phase 3d:
+  ```bash
+  conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/convert_transcript.py \
+    --input "<transcript-path>" \
+    --output-dir ".video2pr/<video-basename>"
+  ```
+
+- **Without timestamps** → Convert to get speaker info, then continue to Phase 3c for Whisper transcription:
+  ```bash
+  conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/convert_transcript.py \
+    --input "<transcript-path>" \
+    --output-dir ".video2pr/<video-basename>"
+  ```
+
+If no external transcript → continue to Phase 3c.
+
+### Phase 3c: Language Detection + Whisper Transcription
+
+1. Detect language (always uses base model for speed):
+   ```bash
+   conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/transcribe.py \
+     --input ".video2pr/<video-basename>/audio.wav" \
+     --detect-language
+   ```
+   Report: "Detected language: English (95% confidence)"
+
+2. If confidence < 80%, ask the user to confirm the language before proceeding.
+
+3. Run full transcription with the confirmed language:
+   ```bash
+   conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/transcribe.py \
+     --input ".video2pr/<video-basename>/audio.wav" \
+     --output-dir ".video2pr/<video-basename>" \
+     --model base \
+     --language <confirmed-language-code>
+   ```
 
 For higher accuracy (longer processing), use `--model medium` or `--model large`.
+
+### Phase 3d: Speaker Enrichment (conditional)
+
+If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3c: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done by Claude directly (no script needed) — compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
 
 ## Phase 4: Analyze Transcript
 
 Read `.video2pr/<video-basename>/transcript.json`. This file contains:
-- **Segments**: each with `start` (float seconds), `end` (float seconds), `text`
-- **Words**: within each segment, entries with `word`, `start`, `end`, `probability`
+- **Segments**: each with `start` (float seconds), `end` (float seconds), `text`, optionally `speaker`
+- **Words**: within each segment, entries with `word`, `start`, `end`, `probability` (may be empty for external transcripts)
+
+When `speaker` fields are available, use them to attribute topics, action items, and decisions to specific speakers.
 
 Analyze the transcript to identify:
 
@@ -133,6 +177,8 @@ The frame is saved to `.video2pr/<video-basename>/frames/frame_00h03m22s.png` an
 After completion, confirm these files exist in `.video2pr/<video-basename>/`:
 - `audio.wav` — 16kHz mono audio
 - `metadata.json` — ffprobe video metadata
-- `transcript.srt` — SRT transcript with timestamps
-- `transcript.json` — JSON with word-level timestamps
+- `transcript.json` — JSON with segment timestamps (and word-level if Whisper-generated)
+- `transcript.srt` — SRT transcript with timestamps (Whisper-generated only)
 - `summary.md` — structured meeting analysis
+- `external_transcript_meta.json` — (if external transcript used) source format and capabilities
+- `external_transcript_original.*` — (if external transcript used) copy of original file
