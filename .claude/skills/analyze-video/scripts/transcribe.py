@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -84,6 +85,15 @@ def detect_language(audio_path: Path, model_name: str = "base") -> dict:
             for lang, prob in sorted_langs[1:6]
         ],
     }
+
+
+def format_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as human-readable string."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    m = int(seconds // 60)
+    s = seconds % 60
+    return f"{m}m {s:.1f}s"
 
 
 def run_whisper(
@@ -190,7 +200,13 @@ def transcribe_single(
     audio_path: Path, output_dir: Path, model: str, language: str | None = None
 ) -> None:
     """Transcribe a single audio file directly."""
+    start_time = time.time()
     run_whisper(audio_path, output_dir, model, language=language)
+    elapsed = time.time() - start_time
+
+    duration = get_audio_duration(audio_path)
+    ratio = duration / elapsed if elapsed > 0 else 0
+    print(f"Transcription took {format_elapsed(elapsed)} for {format_elapsed(duration)} of audio ({ratio:.1f}x realtime)")
 
     # Whisper outputs files named after the input audio stem
     stem = audio_path.stem
@@ -228,14 +244,18 @@ def transcribe_chunked(
         all_srt = ""
         all_segments: list[dict] = []
         srt_index = 1
+        total_start = time.time()
 
         for i, chunk_path in enumerate(chunks):
             offset = i * chunk_duration
             print(f"Transcribing chunk {i + 1}/{len(chunks)}...")
 
+            chunk_start = time.time()
             chunk_out = tmp_dir / f"chunk_{i:04d}_out"
             chunk_out.mkdir(exist_ok=True)
             run_whisper(chunk_path, chunk_out, model, language=language)
+            chunk_elapsed = time.time() - chunk_start
+            print(f"Chunk {i + 1}/{len(chunks)} done in {format_elapsed(chunk_elapsed)}")
 
             # Read chunk SRT
             chunk_srt_path = chunk_out / f"{chunk_path.stem}.srt"
@@ -251,6 +271,8 @@ def transcribe_chunked(
                 segments = chunk_data.get("segments", [])
                 all_segments.extend(offset_json_segments(segments, offset))
 
+        total_elapsed = time.time() - total_start
+
         # Write merged outputs
         srt_path = output_dir / "transcript.srt"
         srt_path.write_text(all_srt.strip() + "\n")
@@ -260,6 +282,10 @@ def transcribe_chunked(
         merged = {"segments": all_segments}
         json_path.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
         print(f"Merged JSON saved to {json_path}")
+
+        duration = get_audio_duration(audio_path)
+        ratio = duration / total_elapsed if total_elapsed > 0 else 0
+        print(f"Transcription took {format_elapsed(total_elapsed)} for {format_elapsed(duration)} of audio ({ratio:.1f}x realtime)")
 
 
 def main():
