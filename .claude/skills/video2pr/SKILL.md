@@ -218,7 +218,7 @@ Task 3 (independent)
 
 ### Step 5e: Enter Plan Mode
 
-After writing `plan.md`, use `EnterPlanMode` to present the implementation plan to the user for review. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize before proceeding. Use `ExitPlanMode` once the user confirms the plan.
+After writing `plan.md`, use `EnterPlanMode` to present the implementation plan to the user for review. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize before moving on to Phase 6 (summary generation). Use `ExitPlanMode` once the user confirms the plan.
 
 ## Phase 6: Generate Summary
 
@@ -287,11 +287,31 @@ The frame is saved to `.video2pr/<video-basename>/frames/frame_00h03m22s.png` an
 ## Output Checklist
 
 After completion, confirm these files exist in `.video2pr/<video-basename>/`:
+
+**Always created:**
 - `audio.wav` — 16kHz mono audio
 - `metadata.json` — ffprobe video metadata
 - `transcript.json` — JSON with segment timestamps (and word-level if Whisper-generated)
-- `transcript.srt` — SRT transcript with timestamps (Whisper-generated only)
 - `plan.md` — codebase-grounded implementation plan
 - `summary.md` — structured meeting analysis with implementation plan summary
-- `external_transcript_meta.json` — (if external transcript used) source format and capabilities
-- `external_transcript_original.*` — (if external transcript used) copy of original file
+
+**Created only when Whisper transcription was used (no external transcript with timestamps):**
+- `transcript.srt` — SRT transcript with timestamps
+
+**Created only when an external transcript was provided:**
+- `external_transcript_meta.json` — source format and capabilities
+- `external_transcript_original.*` — copy of original file
+
+## Phase 7: Offer to Implement
+
+After the output checklist passes, present the top-priority tasks from `plan.md` and offer to begin implementation:
+
+1. List all P0 and P1 tasks with their titles and affected files
+2. Ask the user which task(s) to start with
+3. Only begin implementation after the user explicitly selects task(s)
+
+When implementing a task:
+- Follow the approach described in `plan.md`
+- Respect dependency ordering — do not start a task whose dependencies are incomplete
+- Work within the repository root (same scope rules as Phase 5)
+- After completing each task, report what was changed and ask whether to continue with the next task
