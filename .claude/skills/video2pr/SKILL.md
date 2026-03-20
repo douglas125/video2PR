@@ -1,17 +1,19 @@
 ---
-name: analyze-video
-description: Process a meeting recording into coding context. Extracts audio, transcribes with timestamps, and produces a structured summary. Frames can be extracted on-demand when visual content is referenced.
+name: video2pr
+description: Convert a meeting recording into an actionable implementation plan. Extracts audio, transcribes with timestamps, analyzes the codebase against what was discussed, and produces a concrete plan of what to build or change.
 argument-hint: <path-to-video-file>
 allowed-tools:
   - Bash
   - Read
   - Write
   - Glob
+  - EnterPlanMode
+  - ExitPlanMode
 ---
 
-# Analyze Video
+# video2pr
 
-Process a meeting recording into a transcript with timestamps and a structured summary.
+Process a meeting recording into a transcript, structured summary, and codebase-grounded implementation plan.
 
 ## Phase 1: Dependency Check
 
@@ -122,7 +124,95 @@ Analyze the transcript to identify:
 4. **Decisions** — conclusions reached, agreements made
 5. **Feature requests** — new features or changes discussed
 
-## Phase 5: Generate Summary
+## Phase 5: Codebase Analysis & Implementation Plan
+
+This phase bridges the meeting discussion with the actual codebase, producing a concrete plan of what to build or change.
+
+### Step 5a: Extract Actionable Items
+
+From the Phase 4 analysis, extract every actionable item discussed. Categorize each as one of:
+- **requirement** — something that must be built or satisfied
+- **feature request** — a new capability or enhancement
+- **bug report** — a defect or unexpected behavior described
+- **refactoring** — restructuring existing code without changing behavior
+- **architecture change** — significant structural change to the system
+- **config change** — environment, deployment, or configuration update
+- **documentation** — docs, comments, or knowledge-base updates
+
+For each item, record:
+- Title (concise)
+- Speaker and timestamp (from transcript)
+- One-sentence description
+- Verbatim transcript excerpt (1-3 sentences, copied exactly from the transcript) with start/end timestamps — this grounds the task in what was actually said
+
+### Step 5b: Scan Codebase
+
+For each actionable item, use Glob and Read to search the codebase. Classify each item:
+
+- **Already exists** — the functionality or fix is already in place. Cite specific file paths and function/class names.
+- **Partially exists** — some relevant code exists but gaps remain. Cite existing code and describe what's missing.
+- **New** — nothing relevant found. Confirm what was searched (patterns, directories) and not found.
+- **Not applicable** — the item doesn't apply to this codebase (e.g., refers to an external system). Explain why.
+
+### Step 5c: Build Implementation Plan
+
+Create an ordered list of tasks, each with:
+- **Priority**: P0-Blocker, P1-High, P2-Medium, P3-Low
+- **Status**: from Step 5b (already exists / partially exists / new / not applicable)
+- **Affected files**: specific file paths that need to be created or modified
+- **Approach**: 2-5 sentences describing the concrete implementation approach
+- **Dependencies**: references to other tasks that must be completed first (if any)
+- **Complexity**: Small (< 1 hour), Medium (1-4 hours), Large (4+ hours)
+
+Ordering: P0 items first, then within each priority level, dependency-free tasks before dependent ones.
+
+### Step 5d: Write plan.md
+
+Write the implementation plan to `.video2pr/<video-basename>/plan.md` with:
+
+```markdown
+# Implementation Plan: <video-basename>
+
+## Summary
+
+| # | Task | Priority | Status | Complexity | Dependencies |
+|---|------|----------|--------|------------|--------------|
+| 1 | <title> | P0 | New | Medium | — |
+| 2 | <title> | P1 | Partial | Small | #1 |
+
+## Tasks
+
+### Task 1: <title>
+- **Priority**: P0-Blocker
+- **Status**: New
+- **Affected files**: `src/foo.py`, `src/bar.py`
+- **Approach**: <2-5 sentences>
+- **Dependencies**: None
+- **Complexity**: Medium
+- **Source**: <speaker> at HH:MM:SS — "<one-sentence description>"
+- **Transcript excerpt** (HH:MM:SS–HH:MM:SS):
+  > "verbatim quote from the transcript that motivated this task, 1-3 sentences copied exactly"
+
+### Task 2: <title>
+...
+
+## Dependency Graph
+(Include only if any tasks have dependencies)
+
+Task 1 → Task 2 → Task 4
+Task 3 (independent)
+
+## Not Applicable Items
+(Include only if any items were classified as not applicable)
+
+- <item> — <reason>
+```
+
+### Step 5e: Enter Plan Mode
+
+After writing `plan.md`, use `EnterPlanMode` to present the implementation plan to the user for review. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize before proceeding. Use `ExitPlanMode` once the user confirms the plan.
+
+## Phase 6: Generate Summary
 
 Write `.video2pr/<video-basename>/summary.md` with this structure:
 
@@ -147,6 +237,20 @@ For each visual reference found in the transcript, include:
 |-----------|---------|-----------------|
 | HH:MM:SS | "what was said about the visual" | `conda run -n video2pr python <skill-dir>/scripts/extract_frame.py --input "<video>" --output-dir ".video2pr/<basename>" --timestamp HH:MM:SS` |
 
+## Implementation Plan
+
+See [plan.md](plan.md) for the full implementation plan.
+
+**Items by status:**
+- New: <count>
+- Partially exists: <count>
+- Already exists: <count>
+- Not applicable: <count>
+
+**Top priorities:**
+- [ ] <P0/P1 task title> (Task #<n>)
+- [ ] <P0/P1 task title> (Task #<n>)
+
 ## Action Items
 - [ ] <action> — assigned to <person> (HH:MM:SS)
 
@@ -154,14 +258,14 @@ For each visual reference found in the transcript, include:
 - <decision made> (HH:MM:SS)
 
 ## Feature Requests
-- <feature described> (HH:MM:SS)
+- <feature described> (HH:MM:SS) → Plan Task #<n>
 ```
 
 **Do NOT extract frames at this stage.** Only include the ready-to-run commands.
 
-## Phase 6: On-Demand Frame Extraction
+## Frame Extraction (utility — available anytime)
 
-When you or the user needs to see a specific frame (e.g., to understand a slide or diagram referenced in the transcript), extract it:
+At any point during Phase 4, Phase 5, or later during implementation, you can extract a frame from the video when visual context would help understand what was discussed:
 
 ```bash
 conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/extract_frame.py \
@@ -179,6 +283,7 @@ After completion, confirm these files exist in `.video2pr/<video-basename>/`:
 - `metadata.json` — ffprobe video metadata
 - `transcript.json` — JSON with segment timestamps (and word-level if Whisper-generated)
 - `transcript.srt` — SRT transcript with timestamps (Whisper-generated only)
-- `summary.md` — structured meeting analysis
+- `plan.md` — codebase-grounded implementation plan
+- `summary.md` — structured meeting analysis with implementation plan summary
 - `external_transcript_meta.json` — (if external transcript used) source format and capabilities
 - `external_transcript_original.*` — (if external transcript used) copy of original file

@@ -11,12 +11,12 @@ conda activate video2pr
 
 ## Usage
 
-Use the `/analyze-video <path>` skill to process a video recording.
+Use the `/video2pr <path>` skill to process a video recording.
 
 ## Project Structure
 
 - `environment.yml` — Conda environment definition
-- `.claude/skills/analyze-video/` — Skill definition and scripts
+- `.claude/skills/video2pr/` — Skill definition and scripts
 - `.video2pr/` — Runtime output directory (per-video, gitignored)
 
 ## Git Workflow
