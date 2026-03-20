@@ -29,11 +29,23 @@ def check_conda_env(env_name):
     return False
 
 
+def check_python_import(module_name):
+    """Check if a Python module can be imported."""
+    try:
+        __import__(module_name)
+        return True
+    except ImportError:
+        return False
+
+
 def main():
     deps = {
         "ffmpeg": check_command("ffmpeg"),
         "ffprobe": check_command("ffprobe"),
         "whisper": check_command("whisper"),
+    }
+    pip_deps = {
+        "python-docx": check_python_import("docx"),
     }
     conda_ok = check_conda_env("video2pr")
 
@@ -41,10 +53,14 @@ def main():
     for name, found in deps.items():
         status = "OK" if found else "MISSING"
         print(f"  {name}: {status}")
+    for name, found in pip_deps.items():
+        status = "OK" if found else "MISSING"
+        print(f"  {name}: {status}")
 
     print(f"  conda env (video2pr): {'OK' if conda_ok else 'MISSING'}")
 
     missing = [name for name, found in deps.items() if not found]
+    missing.extend(name for name, found in pip_deps.items() if not found)
     if not conda_ok:
         missing.append("conda env (video2pr)")
 

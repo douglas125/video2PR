@@ -18,3 +18,7 @@ Use the `/analyze-video <path>` skill to process a video recording.
 - `environment.yml` — Conda environment definition
 - `.claude/skills/analyze-video/` — Skill definition and scripts
 - `.video2pr/` — Runtime output directory (per-video, gitignored)
+
+## Git Workflow
+
+Always create a feature branch from `main`, open a PR, then merge to `main`. Never commit directly to `main`.
