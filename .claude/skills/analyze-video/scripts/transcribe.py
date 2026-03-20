@@ -269,9 +269,9 @@ def main():
     parser.add_argument("--output-dir", help="Output directory (required unless --detect-language)")
     parser.add_argument(
         "--model",
-        default="base",
-        choices=["base", "medium", "large"],
-        help="Whisper model size (default: base)",
+        default="small",
+        choices=["base", "small", "medium", "large"],
+        help="Whisper model size (default: small)",
     )
     parser.add_argument(
         "--language",

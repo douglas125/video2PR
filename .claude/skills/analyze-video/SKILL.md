@@ -36,7 +36,7 @@ The user provides a video file path as the argument. Verify:
 3. Get duration via ffprobe:
 
 ```bash
-ffprobe -v quiet -print_format json -show_format "<video-path>" | python -c "import sys,json; d=float(json.load(sys.stdin)['format']['duration']); print(f'Duration: {d:.0f}s ({d/60:.1f} min)')"
+conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/get_duration.py --input "<video-path>"
 ```
 
 Set up the output directory:
@@ -96,11 +96,11 @@ If no external transcript → continue to Phase 3c.
    conda run -n video2pr python ${CLAUDE_SKILL_DIR}/scripts/transcribe.py \
      --input ".video2pr/<video-basename>/audio.wav" \
      --output-dir ".video2pr/<video-basename>" \
-     --model base \
+     --model small \
      --language <confirmed-language-code>
    ```
 
-For higher accuracy (longer processing), use `--model medium` or `--model large`.
+The default model is `small` (good balance of speed and accuracy). For faster but less accurate results use `--model base`; for higher accuracy (longer processing) use `--model medium` or `--model large`.
 
 ### Phase 3d: Speaker Enrichment (conditional)
 
