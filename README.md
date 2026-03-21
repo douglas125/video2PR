@@ -1,6 +1,6 @@
 # video2PR
 
-An AI coding assistant skill that converts meeting video recordings into structured context — transcripts with timestamps, speaker attribution, action items, decisions, and a codebase-grounded implementation plan. Works with Claude Code, OpenAI Codex CLI, and GitHub Copilot CLI.
+An AI coding assistant skill that converts meeting video recordings into structured context - transcripts with timestamps, speaker attribution, action items, decisions, and a codebase-grounded implementation plan. Works with Claude Code, OpenAI Codex CLI, and GitHub Copilot CLI.
 
 ## Cross-Platform Support
 
@@ -12,7 +12,7 @@ video2PR works with multiple AI coding assistants:
 | [OpenAI Codex CLI](https://github.com/openai/codex) | `.agents/skills/video2pr/` | Full support |
 | [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) | `.github/skills/video2pr/` | Full support |
 
-Each skill folder is fully self-contained — SKILL.md, scripts, and environment.yml are all included.
+Each skill folder is fully self-contained - SKILL.md, scripts, and environment.yml are all included.
 
 ## Getting Started
 
@@ -37,33 +37,27 @@ python /path/to/video2PR/install_video2pr.py /path/to/your-project --assistants 
 python /path/to/video2PR/install_video2pr.py /path/to/your-project --dry-run
 ```
 
-Each skill folder is fully self-contained — scripts and environment.yml are copied alongside the SKILL.md. No files are placed outside the skill folder.
+Each skill folder is fully self-contained - scripts and environment.yml are copied alongside the SKILL.md. No files are placed outside the skill folder.
 
 ### Updating
 
-The skill checks for updates on each run and notifies you if a newer version is available. To apply:
+The skill checks for updates on each run and notifies you if a newer version is available. To apply, run the updater from the skill directory you installed:
 
 ```bash
 conda run -n video2pr python .claude/skills/video2pr/scripts/check_update.py --apply
+conda run -n video2pr python .agents/skills/video2pr/scripts/check_update.py --apply
+conda run -n video2pr python .github/skills/video2pr/scripts/check_update.py --apply
 ```
 
 <details>
 <summary>Manual installation</summary>
 
-```bash
-# Copy the skill folder for your platform into your project:
+Manual install is a folder copy, and the source/destination paths are the same on Windows, macOS, and Linux:
 
-# Claude Code
-cp -r .claude/skills/video2pr /path/to/your-project/.claude/skills/
-
-# Codex CLI
-cp -r .agents/skills/video2pr /path/to/your-project/.agents/skills/
-
-# Copilot CLI
-cp -r .github/skills/video2pr /path/to/your-project/.github/skills/
-mkdir -p /path/to/your-project/.github/agents
-cp .github/agents/video2pr.agent.md /path/to/your-project/.github/agents/
-```
+- Claude Code: copy `.claude/skills/video2pr/` into `<project>/.claude/skills/video2pr/`
+- Codex CLI: copy `.agents/skills/video2pr/` into `<project>/.agents/skills/video2pr/`
+- GitHub Copilot CLI: copy `.github/skills/video2pr/` into `<project>/.github/skills/video2pr/`
+- GitHub Copilot CLI: also copy `.github/agents/video2pr.agent.md` into `<project>/.github/agents/video2pr.agent.md`
 
 </details>
 
@@ -80,7 +74,7 @@ Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`)
 ## What It Does
 
 1. Extracts audio from video (mp4, mkv, avi, mov, webm)
-2. Detects spoken language with confidence scoring — asks for confirmation if < 80%
+2. Detects spoken language with confidence scoring - asks for confirmation if < 80%
 3. Transcribes via Whisper with word-level timestamps, or imports an external transcript (Google Meet SBV/TXT, MS Teams VTT/DOCX) with speaker attribution
 4. Analyzes the codebase against what was discussed and produces a concrete implementation plan (`plan.md`)
 5. Produces `summary.md` with topics, action items, decisions, visual reference commands, and a link to the implementation plan
@@ -94,7 +88,7 @@ The `--model` flag controls the quality/speed tradeoff for transcription:
 | Model | Parameters | Relative Speed | Best For |
 |-------|-----------|----------------|----------|
 | `base` | 74M | ~10x realtime | Quick drafts, testing, short meetings |
-| `small` | 244M | ~4x realtime | **Default** — good balance of speed and accuracy |
+| `small` | 244M | ~4x realtime | **Default** - good balance of speed and accuracy |
 | `medium` | 769M | ~1.5x realtime | Important meetings where accuracy matters |
 | `large` | 1550M | ~0.5x realtime | Maximum accuracy, multilingual content |
 
@@ -104,16 +98,13 @@ Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower.
 
 ```bash
 # Detect language
-conda run -n video2pr python scripts/transcribe.py \
-  --input audio.wav --detect-language
+conda run -n video2pr python scripts/transcribe.py --input audio.wav --detect-language
 
 # Transcribe with explicit language
-conda run -n video2pr python scripts/transcribe.py \
-  --input audio.wav --output-dir out --model small --language en
+conda run -n video2pr python scripts/transcribe.py --input audio.wav --output-dir out --model small --language en
 
 # Convert an external transcript
-conda run -n video2pr python scripts/convert_transcript.py \
-  --input meeting.vtt --output-dir out
+conda run -n video2pr python scripts/convert_transcript.py --input meeting.vtt --output-dir out
 ```
 
 ## Output Files

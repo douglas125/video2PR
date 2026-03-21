@@ -70,7 +70,7 @@ def main():
     print(f"Extracting metadata from {input_path.name}...")
     metadata = get_metadata(input_path)
     metadata_path = output_dir / "metadata.json"
-    metadata_path.write_text(json.dumps(metadata, indent=2))
+    metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(f"Metadata saved to {metadata_path}")
 
     # Extract audio

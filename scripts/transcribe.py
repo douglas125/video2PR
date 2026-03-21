@@ -287,7 +287,7 @@ def transcribe_chunked(
             # Read chunk SRT for merging (writer already wrote it)
             chunk_srt_path = chunk_out / f"{chunk_path.stem}.srt"
             if chunk_srt_path.exists():
-                chunk_srt = chunk_srt_path.read_text()
+                chunk_srt = chunk_srt_path.read_text(encoding="utf-8")
                 offset_text, srt_index = offset_srt(chunk_srt, offset, srt_index)
                 srt_parts.append(offset_text)
 
@@ -295,12 +295,15 @@ def transcribe_chunked(
 
         # Write merged outputs
         srt_path = output_dir / "transcript.srt"
-        srt_path.write_text("\n".join(srt_parts).strip() + "\n")
+        srt_path.write_text("\n".join(srt_parts).strip() + "\n", encoding="utf-8")
         print(f"Merged SRT saved to {srt_path}")
 
         json_path = output_dir / "transcript.json"
         merged = {"segments": all_segments}
-        json_path.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
+        json_path.write_text(
+            json.dumps(merged, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
         print(f"Merged JSON saved to {json_path}")
 
         ratio = duration / total_elapsed if total_elapsed > 0 else 0
