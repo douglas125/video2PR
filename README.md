@@ -87,6 +87,19 @@ Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`)
 
 If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically.
 
+## Whisper Model Choices
+
+The `--model` flag controls the quality/speed tradeoff for transcription:
+
+| Model | Parameters | Relative Speed | Best For |
+|-------|-----------|----------------|----------|
+| `base` | 74M | ~10x realtime | Quick drafts, testing, short meetings |
+| `small` | 244M | ~4x realtime | **Default** — good balance of speed and accuracy |
+| `medium` | 769M | ~1.5x realtime | Important meetings where accuracy matters |
+| `large` | 1550M | ~0.5x realtime | Maximum accuracy, multilingual content |
+
+Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower. The skill prompts you to install GPU-accelerated PyTorch if a compatible GPU is detected but not configured.
+
 ## Standalone Scripts
 
 ```bash
@@ -96,7 +109,7 @@ conda run -n video2pr python scripts/transcribe.py \
 
 # Transcribe with explicit language
 conda run -n video2pr python scripts/transcribe.py \
-  --input audio.wav --output-dir out --model base --language en
+  --input audio.wav --output-dir out --model small --language en
 
 # Convert an external transcript
 conda run -n video2pr python scripts/convert_transcript.py \
