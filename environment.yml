@@ -9,3 +9,4 @@ dependencies:
   - pip:
       - openai-whisper
       - python-docx
+      - pytest
