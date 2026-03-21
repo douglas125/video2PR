@@ -23,6 +23,17 @@ Process a meeting recording into a transcript, structured summary, and codebase-
 - The video file path is an **input artifact only**. Its parent directory is unrelated to the codebase — do not scan, analyze, or modify files there.
 - The only new directory created is `.video2pr/` inside the repo root for output files.
 
+## Phase 0: Check for Updates
+
+Run the update checker:
+
+```bash
+conda run -n video2pr python scripts/check_update.py
+```
+
+- If output contains `UP_TO_DATE` or `CHECK_SKIPPED`: continue to Phase 1 silently.
+- If output contains `UPDATE_AVAILABLE`: tell the user: "A video2pr update is available. To update, run: `conda run -n video2pr python scripts/check_update.py --apply`". Then continue to Phase 1 — do NOT auto-update.
+
 ## Phase 1: Dependency Check
 
 Run the dependency checker:
