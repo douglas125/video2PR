@@ -59,22 +59,27 @@ def check(config: dict) -> bool:
     repo = config["repo"]
     branch = config.get("branch", "main")
     installed_at = config["installed_at"]
+    skill_dir = config.get("skill_dir", "")
 
-    url = GITHUB_API.format(repo=repo) + f"?path=scripts&sha={branch}&per_page=1"
-    commits = fetch_json(url)
+    # Check all paths that get updated: scripts/, environment.yml, and SKILL.md
+    paths_to_check = ["scripts", "environment.yml"]
+    source_path = SKILL_MD_SOURCES.get(skill_dir)
+    if source_path:
+        paths_to_check.append(source_path)
 
-    if not commits:
-        print("UP_TO_DATE")
-        return False
+    for path in paths_to_check:
+        url = GITHUB_API.format(repo=repo) + f"?path={path}&sha={branch}&per_page=1"
+        commits = fetch_json(url)
+        if not commits:
+            continue
+        latest_date = commits[0]["commit"]["committer"]["date"]
+        if latest_date > installed_at:
+            print(f"UPDATE_AVAILABLE: New changes since {installed_at}. "
+                  f"Run with --apply to update.")
+            return True
 
-    latest_date = commits[0]["commit"]["committer"]["date"]
-    if latest_date <= installed_at:
-        print("UP_TO_DATE")
-        return False
-
-    print(f"UPDATE_AVAILABLE: New changes since {installed_at}. "
-          f"Run with --apply to update.")
-    return True
+    print("UP_TO_DATE")
+    return False
 
 
 def rewrite_paths(content: str, skill_dir: str) -> str:
