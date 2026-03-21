@@ -146,12 +146,12 @@ When `speaker` fields are available, use them to attribute topics, action items,
 Analyze the transcript to identify:
 
 1. **Discussion topics** with timestamp ranges (start/end in HH:MM:SS)
-2. **Visual references** - phrases like "as you can see", "this slide shows", "let me show you", "on the screen", "this diagram", etc. Use the word-level `start` time to get precise timestamps for frame extraction.
+2. **Visual references** - phrases like "as you can see", "this slide shows", "let me show you", "on the screen", "this diagram", etc. Use the word-level `start` time to get precise timestamps for frame extraction. **When visual references are identified, extract and read frames at those timestamps if the visual context would help understand the discussion.** Use judgment — sometimes no frames are needed, sometimes several are. Don't defer this to later phases; understanding what was shown on screen often informs the implementation plan.
 3. **Action items** - tasks assigned to people, deadlines mentioned
 4. **Decisions** - conclusions reached, agreements made
 5. **Feature requests** - new features or changes discussed
 
-After completing this analysis, proceed directly to Phase 5. Do NOT ask for user approval or enter plan mode at this stage — the plan review checkpoint comes after the codebase analysis in Phase 5.
+After completing this analysis, proceed directly to Phase 5. Do NOT ask for user approval or enter plan mode at this stage — the plan review checkpoint comes after the codebase analysis in Phase 5. Move through Phase 5 efficiently; do not linger between phases.
 
 ## Phase 5: Codebase Analysis & Implementation Plan
 
@@ -290,11 +290,11 @@ See [plan.md](plan.md) for the full implementation plan.
 - <feature described> (HH:MM:SS) → Plan Task #<n>
 ```
 
-**Do NOT extract frames at this stage.** Only include the ready-to-run commands.
+Frames may already have been extracted during Phase 4. For any visual references not yet extracted, include the ready-to-run commands in the table.
 
-## Frame Extraction (utility - available anytime)
+## Frame Extraction (encouraged whenever visual context helps)
 
-At any point during Phase 4, Phase 5, or later during implementation, you can extract a frame from the video when visual context would help understand what was discussed:
+Extract frames proactively whenever visual context would help understand what was discussed — during transcript analysis, codebase analysis, plan writing, or implementation. Default toward extracting when visual references exist rather than deferring:
 
 ```bash
 conda run -n video2pr python scripts/extract_frame.py --input "<video-path>" --output-dir ".video2pr/<video-basename>" --timestamp HH:MM:SS
