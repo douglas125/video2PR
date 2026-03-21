@@ -1,3 +1,5 @@
 .video2pr/
 test_videos_dont_commit/
 .DS_Store
+__pycache__/
+*.pyc
