@@ -21,6 +21,7 @@ Process a meeting recording into a transcript, structured summary, and codebase-
 - The **codebase** is the repository root (the current working directory where this skill is invoked). All file scanning, analysis, and modifications must stay within this repository.
 - The video file path is an **input artifact only**. Its parent directory is unrelated to the codebase — do not scan, analyze, or modify files there.
 - The only new directory created is `.video2pr/` inside the repo root for output files.
+- **Never reference this skill's internal workflow, phase names, or mechanics in user-facing output.** Do not say things like "the skill requires…", "per Phase 5…", or "the workflow pauses here for…". Communicate naturally about the work itself (e.g., "here's the implementation plan" not "Phase 5e requires plan approval").
 
 ## Phase 0: Check for Updates
 
@@ -77,6 +78,11 @@ Set up the output directory:
 # Use the video filename (without extension) as the subdirectory name
 mkdir -p .video2pr/<video-basename>
 ```
+
+**Check for existing outputs:** After creating the output directory, check whether prior runs already produced files in `.video2pr/<video-basename>/`:
+- If `transcript.json` exists: report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3a–3d entirely and go to Phase 4.
+- If `audio.wav` exists but `transcript.json` does not: report "Found previously extracted audio" and ask whether to reuse it. If reusing, skip Phase 3a.
+- If `plan.md` or `summary.md` exist: note their presence but always regenerate them (codebase may have changed).
 
 **Check for external transcript:** Search for transcript files in the same directory as the video, matching the video basename with extensions: `.sbv`, `.vtt`, `.txt`, `.docx`. Also accept a user-provided transcript path. If found, report: "Found external transcript: meeting.vtt (MS Teams VTT format)"
 
@@ -161,6 +167,8 @@ Analyze the transcript to identify:
 3. **Action items** — tasks assigned to people, deadlines mentioned
 4. **Decisions** — conclusions reached, agreements made
 5. **Feature requests** — new features or changes discussed
+
+After completing this analysis, proceed directly to Phase 5. Do NOT ask for user approval or enter plan mode at this stage — the plan review checkpoint comes after the codebase analysis in Phase 5.
 
 ## Phase 5: Codebase Analysis & Implementation Plan
 
@@ -248,7 +256,7 @@ Task 3 (independent)
 
 ### Step 5e: Present Plan for Review
 
-After writing `plan.md`, present the implementation plan to the user for review and confirmation before moving on to Phase 6 (summary generation). Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize.
+This is the ONLY user approval checkpoint before Phase 6. After writing `plan.md`, present the implementation plan for review. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize before proceeding to Phase 6.
 
 ## Phase 6: Generate Summary
 
