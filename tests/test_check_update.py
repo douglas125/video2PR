@@ -84,6 +84,30 @@ def test_check_no_commits(monkeypatch, capsys):
     assert "UP_TO_DATE" in capsys.readouterr().out
 
 
+def test_check_skill_md_update_detected(monkeypatch, capsys):
+    """Update in SKILL.md (not scripts/) is detected."""
+    config = {
+        "repo": "test/repo",
+        "branch": "main",
+        "installed_at": "2025-06-01T00:00:00Z",
+        "skill_dir": ".claude/skills/video2pr",
+    }
+
+    def mock_fetch_json(url):
+        if "path=scripts" in url or "path=environment.yml" in url:
+            # scripts and environment.yml are old
+            return [{"commit": {"committer": {"date": "2025-01-01T00:00:00Z"}}}]
+        if "SKILL.md" in url:
+            # SKILL.md has a newer commit
+            return [{"commit": {"committer": {"date": "2025-12-01T00:00:00Z"}}}]
+        return []
+
+    monkeypatch.setattr(check_update, "fetch_json", mock_fetch_json)
+    result = check_update.check(config)
+    assert result is True
+    assert "UPDATE_AVAILABLE" in capsys.readouterr().out
+
+
 # ── Apply mode ──────────────────────────────────────────────────────
 
 

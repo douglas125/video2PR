@@ -41,6 +41,8 @@ Run the dependency checker:
 python scripts/check_deps.py
 ```
 
+**Capture the conda path:** Look for the `CONDA_PATH: <path>` line in the output. Use that path instead of bare `conda` in **all** subsequent commands in this skill (e.g., `<conda-path> run -n video2pr ...`). If no `CONDA_PATH:` line appears (e.g., conda is missing), use `conda` as-is.
+
 If any dependencies show `MISSING:`, guide the user to install them:
 
 ```bash
@@ -51,7 +53,7 @@ conda activate video2pr
 After dependencies pass, check GPU status:
 
 ```bash
-conda run -n video2pr python scripts/check_gpu.py
+<conda-path> run -n video2pr python scripts/check_gpu.py
 ```
 
 Interpret the JSON output:

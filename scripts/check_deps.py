@@ -7,6 +7,8 @@ This script itself runs from system Python — no conda activation needed.
 """
 
 import json
+import platform
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,11 +19,48 @@ CLI_TOOLS = ["ffmpeg", "ffprobe", "whisper"]
 PYTHON_IMPORTS = {"python-docx": "docx"}
 
 
+def find_conda():
+    """Find the conda executable path, with Windows fallback.
+
+    Tries shutil.which first. On Windows, checks common install locations
+    if conda is not on PATH (e.g. Git Bash sessions).
+
+    Returns the path string or None.
+    """
+    exe = shutil.which("conda")
+    if exe is not None:
+        return exe
+
+    if platform.system() != "Windows":
+        return None
+
+    # Common Windows conda install locations
+    home = Path.home()
+    candidates = [
+        home / "miniconda3" / "condabin" / "conda.bat",
+        home / "anaconda3" / "condabin" / "conda.bat",
+        home / "Miniconda3" / "condabin" / "conda.bat",
+        home / "Anaconda3" / "condabin" / "conda.bat",
+        Path(r"C:\ProgramData\miniconda3\condabin\conda.bat"),
+        Path(r"C:\ProgramData\anaconda3\condabin\conda.bat"),
+        Path(r"C:\ProgramData\Miniconda3\condabin\conda.bat"),
+        Path(r"C:\ProgramData\Anaconda3\condabin\conda.bat"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return None
+
+
 def conda_available():
-    """Check if conda is on the system PATH and working."""
+    """Check if conda is findable and working."""
+    conda_path = find_conda()
+    if conda_path is None:
+        return False
     try:
         result = subprocess.run(
-            ["conda", "--version"],
+            [conda_path, "--version"],
             capture_output=True,
             text=True,
         )
@@ -30,10 +69,10 @@ def conda_available():
         return False
 
 
-def env_exists(env_name):
+def env_exists(env_name, conda_path="conda"):
     """Check if a conda environment exists."""
     result = subprocess.run(
-        ["conda", "env", "list", "--json"],
+        [conda_path, "env", "list", "--json"],
         capture_output=True,
         text=True,
     )
@@ -43,7 +82,7 @@ def env_exists(env_name):
     return any(Path(e).name == env_name for e in envs)
 
 
-def check_deps_in_env():
+def check_deps_in_env(conda_path="conda"):
     """Check all CLI tools and Python imports in a single conda run call.
 
     Returns (cli_results, import_results) where each is a dict of name -> bool.
@@ -61,7 +100,7 @@ def check_deps_in_env():
     script = "import shutil, json\nresults = {}\n" + "\n".join(checks) + "\nprint(json.dumps(results))"
 
     result = subprocess.run(
-        ["conda", "run", "-n", ENV_NAME, "python", "-c", script],
+        [conda_path, "run", "-n", ENV_NAME, "python", "-c", script],
         capture_output=True,
         text=True,
     )
@@ -76,15 +115,17 @@ def check_deps_in_env():
 def main():
     print("=== video2pr dependency check ===")
 
-    if not conda_available():
+    conda_path = find_conda()
+    if conda_path is None:
         print("  conda: MISSING")
         print("\nMISSING: conda")
         print("\nInstall conda/miniconda first, then run:")
         print("  conda env create -f environment.yml")
         sys.exit(1)
     print("  conda: OK")
+    print(f"CONDA_PATH: {conda_path}")
 
-    if not env_exists(ENV_NAME):
+    if not env_exists(ENV_NAME, conda_path):
         print(f"  conda env ({ENV_NAME}): MISSING")
         print(f"\nMISSING: conda env ({ENV_NAME})")
         print("\nTo set up the environment:")
@@ -92,7 +133,7 @@ def main():
         sys.exit(1)
     print(f"  conda env ({ENV_NAME}): OK")
 
-    results = check_deps_in_env()
+    results = check_deps_in_env(conda_path)
     missing = []
     for name, found in results.items():
         status = "OK" if found else "MISSING"
@@ -112,7 +153,7 @@ def main():
     gpu_script = Path(__file__).resolve().parent / "check_gpu.py"
     if gpu_script.exists():
         gpu_result = subprocess.run(
-            ["conda", "run", "-n", ENV_NAME, "python", str(gpu_script)],
+            [conda_path, "run", "-n", ENV_NAME, "python", str(gpu_script)],
             capture_output=True,
             text=True,
         )
