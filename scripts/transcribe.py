@@ -10,6 +10,8 @@ import tempfile
 import time
 from pathlib import Path
 
+CHUNK_THRESHOLD_SECONDS = 1800  # 30 minutes
+
 
 def get_audio_duration(audio_path: Path) -> float:
     """Get audio duration in seconds using ffprobe."""
@@ -65,11 +67,19 @@ def split_audio(audio_path: Path, chunk_duration: int, temp_dir: Path) -> list[P
     return chunks
 
 
+def load_whisper_model(model_name: str):
+    """Load a Whisper model, printing status so the user knows what's happening."""
+    import whisper
+
+    print(f"Loading Whisper model '{model_name}'...")
+    return whisper.load_model(model_name)
+
+
 def detect_language(audio_path: Path, model_name: str = "base") -> dict:
     """Detect language from the first 30 seconds of audio using Whisper's Python API."""
     import whisper
 
-    model = whisper.load_model(model_name)
+    model = load_whisper_model(model_name)
     audio = whisper.load_audio(str(audio_path))
     audio = audio[: 30 * 16000]  # first 30 seconds
     audio = whisper.pad_or_trim(audio)
@@ -97,23 +107,40 @@ def format_elapsed(seconds: float) -> str:
 
 
 def run_whisper(
-    audio_path: Path, output_dir: Path, model: str, language: str | None = None
-) -> None:
-    """Run whisper on an audio file."""
-    cmd = [
-        "whisper",
-        str(audio_path),
-        "--model", model,
-        "--word_timestamps", "True",
-        "--output_format", "all",
-        "--output_dir", str(output_dir),
-    ]
+    audio_path: Path,
+    output_dir: Path,
+    model,
+    language: str | None = None,
+    output_formats: tuple[str, ...] = ("json", "srt"),
+) -> dict:
+    """Run whisper on an audio file using the Python API (shows tqdm progress bar).
+
+    Args:
+        audio_path: Path to the audio file.
+        output_dir: Directory to write JSON and SRT outputs.
+        model: A loaded Whisper model object.
+        language: Optional language code (e.g. 'en', 'es').
+        output_formats: Which formats to write to disk (default: JSON and SRT).
+
+    Returns:
+        The Whisper result dict containing segments and text.
+    """
+    from whisper.utils import get_writer
+
+    transcribe_opts = {
+        "verbose": False,  # activates tqdm progress bar
+        "word_timestamps": True,
+    }
     if language:
-        cmd.extend(["--language", language])
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        print("Whisper failed", file=sys.stderr)
-        sys.exit(1)
+        transcribe_opts["language"] = language
+
+    result = model.transcribe(str(audio_path), **transcribe_opts)
+
+    for fmt in output_formats:
+        writer = get_writer(fmt, str(output_dir))
+        writer(result, str(audio_path))
+
+    return result
 
 
 def parse_srt_timestamp(ts: str) -> float:
@@ -197,51 +224,44 @@ def offset_json_segments(segments: list[dict], offset_seconds: float) -> list[di
 
 
 def transcribe_single(
-    audio_path: Path, output_dir: Path, model: str, language: str | None = None
+    audio_path: Path, output_dir: Path, model_name: str, duration: float,
+    language: str | None = None,
 ) -> None:
     """Transcribe a single audio file directly."""
+    model = load_whisper_model(model_name)
+
     start_time = time.time()
     run_whisper(audio_path, output_dir, model, language=language)
     elapsed = time.time() - start_time
 
-    duration = get_audio_duration(audio_path)
     ratio = duration / elapsed if elapsed > 0 else 0
     print(f"Transcription took {format_elapsed(elapsed)} for {format_elapsed(duration)} of audio ({ratio:.1f}x realtime)")
 
-    # Whisper outputs files named after the input audio stem
+    # Whisper's writer names output after the input audio stem — rename to canonical names
     stem = audio_path.stem
-    whisper_json = output_dir / f"{stem}.json"
-    whisper_srt = output_dir / f"{stem}.srt"
-
-    # Rename to canonical names
-    if whisper_json.exists() and stem != "transcript":
-        target_json = output_dir / "transcript.json"
-        whisper_json.rename(target_json)
-    if whisper_srt.exists() and stem != "transcript":
-        target_srt = output_dir / "transcript.srt"
-        whisper_srt.rename(target_srt)
-
-    # Clean up extra whisper output formats
-    for ext in (".tsv", ".txt", ".vtt"):
-        extra = output_dir / f"{stem}{ext}"
-        if extra.exists():
-            extra.unlink()
+    for ext in (".json", ".srt"):
+        src = output_dir / f"{stem}{ext}"
+        if src.exists() and stem != "transcript":
+            src.rename(output_dir / f"transcript{ext}")
 
 
 def transcribe_chunked(
     audio_path: Path,
     output_dir: Path,
-    model: str,
-    chunk_duration: int = 1800,
+    model_name: str,
+    duration: float,
+    chunk_duration: int = CHUNK_THRESHOLD_SECONDS,
     language: str | None = None,
 ) -> None:
     """Transcribe long audio by splitting into chunks and merging."""
+    model = load_whisper_model(model_name)
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         chunks = split_audio(audio_path, chunk_duration, tmp_dir)
         print(f"Split into {len(chunks)} chunks of {chunk_duration}s each")
 
-        all_srt = ""
+        srt_parts: list[str] = []
         all_segments: list[dict] = []
         srt_index = 1
         total_start = time.time()
@@ -253,29 +273,29 @@ def transcribe_chunked(
             chunk_start = time.time()
             chunk_out = tmp_dir / f"chunk_{i:04d}_out"
             chunk_out.mkdir(exist_ok=True)
-            run_whisper(chunk_path, chunk_out, model, language=language)
+            result = run_whisper(
+                chunk_path, chunk_out, model, language=language,
+                output_formats=("srt",),
+            )
             chunk_elapsed = time.time() - chunk_start
             print(f"Chunk {i + 1}/{len(chunks)} done in {format_elapsed(chunk_elapsed)}")
 
-            # Read chunk SRT
+            # Use returned segments directly instead of re-reading from disk
+            segments = result.get("segments", [])
+            all_segments.extend(offset_json_segments(segments, offset))
+
+            # Read chunk SRT for merging (writer already wrote it)
             chunk_srt_path = chunk_out / f"{chunk_path.stem}.srt"
             if chunk_srt_path.exists():
                 chunk_srt = chunk_srt_path.read_text()
                 offset_text, srt_index = offset_srt(chunk_srt, offset, srt_index)
-                all_srt += offset_text + "\n"
-
-            # Read chunk JSON
-            chunk_json_path = chunk_out / f"{chunk_path.stem}.json"
-            if chunk_json_path.exists():
-                chunk_data = json.loads(chunk_json_path.read_text())
-                segments = chunk_data.get("segments", [])
-                all_segments.extend(offset_json_segments(segments, offset))
+                srt_parts.append(offset_text)
 
         total_elapsed = time.time() - total_start
 
         # Write merged outputs
         srt_path = output_dir / "transcript.srt"
-        srt_path.write_text(all_srt.strip() + "\n")
+        srt_path.write_text("\n".join(srt_parts).strip() + "\n")
         print(f"Merged SRT saved to {srt_path}")
 
         json_path = output_dir / "transcript.json"
@@ -283,7 +303,6 @@ def transcribe_chunked(
         json_path.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
         print(f"Merged JSON saved to {json_path}")
 
-        duration = get_audio_duration(audio_path)
         ratio = duration / total_elapsed if total_elapsed > 0 else 0
         print(f"Transcription took {format_elapsed(total_elapsed)} for {format_elapsed(duration)} of audio ({ratio:.1f}x realtime)")
 
@@ -332,10 +351,10 @@ def main():
     print(f"Audio duration: {duration:.1f}s ({duration / 60:.1f} min)")
 
     # Use chunking for files over 30 minutes
-    if duration > 1800:
-        transcribe_chunked(audio_path, output_dir, args.model, language=args.language)
+    if duration > CHUNK_THRESHOLD_SECONDS:
+        transcribe_chunked(audio_path, output_dir, args.model, duration, language=args.language)
     else:
-        transcribe_single(audio_path, output_dir, args.model, language=args.language)
+        transcribe_single(audio_path, output_dir, args.model, duration, language=args.language)
 
     print("Transcription complete.")
 
