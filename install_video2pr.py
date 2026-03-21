@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 
 SCRIPT_NAMES = [
     "check_deps.py",
+    "check_gpu.py",
     "check_update.py",
     "convert_transcript.py",
     "extract_audio.py",

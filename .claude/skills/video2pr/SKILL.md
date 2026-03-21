@@ -49,6 +49,17 @@ conda env create -f environment.yml
 conda activate video2pr
 ```
 
+After dependencies pass, check GPU status:
+
+```bash
+conda run -n video2pr python scripts/check_gpu.py
+```
+
+Interpret the JSON output:
+- If `torch_device_available` is `true`: report the GPU (e.g., "GPU acceleration: NVIDIA RTX 3080 via CUDA 12.4") and continue.
+- If `torch_device_available` is `false` and `install_command` is not null: tell the user their GPU can be used but PyTorch can't access it. Show the install command and note the approximate speedup (~5-20x). Ask if they want to install it now or continue with CPU. Do NOT auto-install.
+- If `device` is `"cpu"` and `install_command` is null: note "Running on CPU" and continue silently.
+
 ## Phase 2: Validate Input
 
 The user provides a video file path as the argument. Verify:

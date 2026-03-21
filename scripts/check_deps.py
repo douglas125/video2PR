@@ -108,6 +108,37 @@ def main():
 
     print("\nAll dependencies found.")
 
+    # GPU status check
+    gpu_script = Path(__file__).resolve().parent / "check_gpu.py"
+    if gpu_script.exists():
+        gpu_result = subprocess.run(
+            ["conda", "run", "-n", ENV_NAME, "python", str(gpu_script)],
+            capture_output=True,
+            text=True,
+        )
+        if gpu_result.returncode == 0:
+            try:
+                gpu_info = json.loads(gpu_result.stdout)
+                device = gpu_info.get("device", "cpu")
+                gpu_name = gpu_info.get("gpu_name")
+                cuda_version = gpu_info.get("cuda_version")
+                available = gpu_info.get("torch_device_available", False)
+                install_cmd = gpu_info.get("install_command")
+
+                if device == "cuda" and available:
+                    print(f"  GPU: {gpu_name} (CUDA {cuda_version}) — OK")
+                elif device == "mps" and available:
+                    print("  GPU: Apple Silicon (MPS) — OK")
+                elif gpu_name and not available:
+                    print(f"  GPU: {gpu_name} detected, PyTorch is CPU-only")
+                    if install_cmd:
+                        print(f"  To enable GPU acceleration (~5-20x faster transcription):")
+                        print(f"    {install_cmd}")
+                else:
+                    print("  GPU: CPU only")
+            except (json.JSONDecodeError, KeyError):
+                print("  GPU: detection failed")
+
 
 if __name__ == "__main__":
     main()
