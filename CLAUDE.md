@@ -16,6 +16,7 @@ Use the `/video2pr <path>` skill to process a video recording.
 ## Project Structure
 
 - `environment.yml` — Conda environment definition
+- `install_video2pr.py` — Installer script (copies self-contained skill folders to target projects)
 - `scripts/` — Platform-neutral Python scripts (audio extraction, transcription, etc.)
 - `.claude/skills/video2pr/` — Claude Code skill definition (SKILL.md only)
 - `.agents/skills/video2pr/` — Codex CLI skill definition

@@ -12,7 +12,7 @@ video2PR works with multiple AI coding assistants:
 | [OpenAI Codex CLI](https://github.com/openai/codex) | `.agents/skills/video2pr/` | Full support |
 | [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) | `.github/skills/video2pr/` | Full support |
 
-All platforms share the same Python scripts in `scripts/` — only the SKILL.md frontmatter differs.
+Each skill folder is fully self-contained — SKILL.md, scripts, and environment.yml are all included.
 
 ## Getting Started
 
@@ -26,11 +26,32 @@ The agent runs commands via `conda run -n video2pr`, so `conda activate` is not 
 
 ### 2. Install the skill
 
-Copy the `scripts/` directory and the skill definition for your platform into your project:
+```bash
+# Install to your project (all assistants)
+python /path/to/video2PR/install_video2pr.py /path/to/your-project
+
+# Install for specific assistants only
+python /path/to/video2PR/install_video2pr.py /path/to/your-project --assistants claude-code
+
+# Preview what will be installed
+python /path/to/video2PR/install_video2pr.py /path/to/your-project --dry-run
+```
+
+Each skill folder is fully self-contained — scripts and environment.yml are copied alongside the SKILL.md. No files are placed outside the skill folder.
+
+### Updating
+
+The skill checks for updates on each run and notifies you if a newer version is available. To apply:
 
 ```bash
-# Scripts (required for all platforms)
-cp -r scripts /path/to/your-project/scripts
+conda run -n video2pr python .claude/skills/video2pr/scripts/check_update.py --apply
+```
+
+<details>
+<summary>Manual installation</summary>
+
+```bash
+# Copy the skill folder for your platform into your project:
 
 # Claude Code
 cp -r .claude/skills/video2pr /path/to/your-project/.claude/skills/
@@ -44,7 +65,7 @@ mkdir -p /path/to/your-project/.github/agents
 cp .github/agents/video2pr.agent.md /path/to/your-project/.github/agents/
 ```
 
-Also copy `environment.yml` if your project doesn't already have one.
+</details>
 
 ### 3. Run it
 
