@@ -57,7 +57,7 @@ conda run -n video2pr python scripts/check_gpu.py
 
 Interpret the JSON output:
 - If `torch_device_available` is `true`: report the GPU (e.g., "GPU acceleration: NVIDIA RTX 3080 via CUDA 12.4") and continue.
-- If `torch_device_available` is `false` and `install_command` is not null: tell the user their GPU can be used but PyTorch can't access it. Show the install command and note the approximate speedup (~5-20x). Ask if they want to install it now or continue with CPU. Do NOT auto-install.
+- If `torch_device_available` is `false` and `install_command` is not null: briefly note that GPU is available but PyTorch can't use it yet. Do NOT prompt to install here — the actionable prompt will appear in Phase 3c, right before transcription when it matters most.
 - If `device` is `"cpu"` and `install_command` is null: note "Running on CPU" and continue silently.
 
 ## Phase 2: Validate Input
@@ -112,6 +112,14 @@ If an external transcript was found in Phase 2:
 If no external transcript → continue to Phase 3c.
 
 ### Phase 3c: Language Detection + Whisper Transcription
+
+**Pre-transcription check:** Before starting transcription (the longest step), re-check GPU status and surface any pending notices so the user can act on them before waiting:
+
+Run GPU check: `conda run -n video2pr python scripts/check_gpu.py`
+
+- If `torch_device_available` is `false` AND `install_command` is not null: display a **prominent warning** to the user explaining that their GPU is available but not being used, show the install command, note the ~5-20x speedup, and **ask whether to install now or continue with CPU**. Wait for the user's response before proceeding.
+- If an update was flagged in Phase 0 (`UPDATE_AVAILABLE`): remind the user: "A video2pr update is available — you can update after this run with: `conda run -n video2pr python scripts/check_update.py --apply`"
+- Otherwise, continue silently.
 
 1. Detect language (always uses base model for speed):
    ```bash
