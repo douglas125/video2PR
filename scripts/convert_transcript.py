@@ -281,7 +281,10 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
     # Write canonical transcript.json
     transcript = {"segments": segments}
     transcript_path = output_dir / "transcript.json"
-    transcript_path.write_text(json.dumps(transcript, indent=2, ensure_ascii=False))
+    transcript_path.write_text(
+        json.dumps(transcript, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     print(f"Transcript saved to {transcript_path}")
 
     # Write metadata
@@ -299,7 +302,10 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
         "segment_count": len(segments),
     }
     meta_path = output_dir / "external_transcript_meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     print(f"Metadata saved to {meta_path}")
 
     # Copy original file

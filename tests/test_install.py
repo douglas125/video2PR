@@ -32,6 +32,24 @@ def test_rewrite_paths_no_match():
     assert install.rewrite_paths(text, ".claude/skills/video2pr") == text
 
 
+def test_rewrite_paths_codex():
+    result = install.rewrite_paths(
+        "python scripts/check_deps.py\nconda env create -f environment.yml",
+        ".agents/skills/video2pr",
+    )
+    assert "python .agents/skills/video2pr/scripts/check_deps.py" in result
+    assert "conda env create -f .agents/skills/video2pr/environment.yml" in result
+
+
+def test_rewrite_paths_copilot():
+    result = install.rewrite_paths(
+        "python scripts/check_deps.py\nconda env create -f environment.yml",
+        ".github/skills/video2pr",
+    )
+    assert "python .github/skills/video2pr/scripts/check_deps.py" in result
+    assert "conda env create -f .github/skills/video2pr/environment.yml" in result
+
+
 # ── Source validation ───────────────────────────────────────────────
 
 
@@ -108,15 +126,37 @@ def test_install_claude_code(fake_repo, target_dir, monkeypatch):
 def test_install_codex_has_openai_yaml(fake_repo, target_dir, monkeypatch):
     monkeypatch.setattr(install, "REPO_ROOT", fake_repo)
     install.install_assistant(target_dir, "codex", dry_run=False)
-    assert (
-        target_dir / ".agents" / "skills" / "video2pr" / "agents" / "openai.yaml"
-    ).exists()
+    skill_dir = target_dir / ".agents" / "skills" / "video2pr"
+    assert (skill_dir / "agents" / "openai.yaml").exists()
+    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert ".agents/skills/video2pr/scripts/" in skill_md
+    assert ".agents/skills/video2pr/environment.yml" in skill_md
 
 
 def test_install_copilot_has_agent_md(fake_repo, target_dir, monkeypatch):
     monkeypatch.setattr(install, "REPO_ROOT", fake_repo)
     install.install_assistant(target_dir, "copilot", dry_run=False)
+    skill_dir = target_dir / ".github" / "skills" / "video2pr"
     assert (target_dir / ".github" / "agents" / "video2pr.agent.md").exists()
+    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert ".github/skills/video2pr/scripts/" in skill_md
+    assert ".github/skills/video2pr/environment.yml" in skill_md
+
+
+def test_install_preserves_utf8_skill_text(fake_repo, target_dir, monkeypatch):
+    monkeypatch.setattr(install, "REPO_ROOT", fake_repo)
+    skill_src = fake_repo / ".agents" / "skills" / "video2pr" / "SKILL.md"
+    skill_src.write_text(
+        "---\nname: video2pr\n---\n\nPortuguês: negócio e migração.\n",
+        encoding="utf-8",
+    )
+
+    install.install_assistant(target_dir, "codex", dry_run=False)
+
+    installed = (
+        target_dir / ".agents" / "skills" / "video2pr" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "Português: negócio e migração." in installed
 
 
 # ── Dry run ─────────────────────────────────────────────────────────

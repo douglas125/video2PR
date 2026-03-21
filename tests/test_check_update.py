@@ -146,6 +146,59 @@ def test_apply_downloads_and_rewrites(tmp_path, monkeypatch, capsys):
     assert "UPDATED" in capsys.readouterr().out
 
 
+def test_apply_downloads_and_rewrites_codex(tmp_path, monkeypatch):
+    skill_dir = tmp_path / ".agents" / "skills" / "video2pr"
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir(parents=True)
+
+    config = {
+        "repo": "test/repo",
+        "branch": "main",
+        "skill_dir": ".agents/skills/video2pr",
+        "installed_at": "2025-01-01T00:00:00Z",
+    }
+    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config), encoding="utf-8")
+
+    def mock_fetch_text(url):
+        if "SKILL.md" in url:
+            return "Run scripts/check_deps.py and environment.yml in Português"
+        return f"# content for {url.split('/')[-1]}"
+
+    monkeypatch.setattr(check_update, "fetch_text", mock_fetch_text)
+    check_update.apply_update(config, scripts_dir)
+
+    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert ".agents/skills/video2pr/scripts/" in skill_md
+    assert ".agents/skills/video2pr/environment.yml" in skill_md
+    assert "Português" in skill_md
+
+
+def test_apply_downloads_and_rewrites_copilot(tmp_path, monkeypatch):
+    skill_dir = tmp_path / ".github" / "skills" / "video2pr"
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir(parents=True)
+
+    config = {
+        "repo": "test/repo",
+        "branch": "main",
+        "skill_dir": ".github/skills/video2pr",
+        "installed_at": "2025-01-01T00:00:00Z",
+    }
+    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config), encoding="utf-8")
+
+    def mock_fetch_text(url):
+        if "SKILL.md" in url:
+            return "Run scripts/check_deps.py and environment.yml"
+        return f"# content for {url.split('/')[-1]}"
+
+    monkeypatch.setattr(check_update, "fetch_text", mock_fetch_text)
+    check_update.apply_update(config, scripts_dir)
+
+    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert ".github/skills/video2pr/scripts/" in skill_md
+    assert ".github/skills/video2pr/environment.yml" in skill_md
+
+
 def test_apply_handles_http_error(tmp_path, monkeypatch, capsys):
     """One download raises HTTPError, others succeed, no crash."""
     skill_dir = tmp_path / ".claude" / "skills" / "video2pr"

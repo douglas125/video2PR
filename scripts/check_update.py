@@ -14,6 +14,7 @@ GITHUB_RAW = "https://raw.githubusercontent.com/{repo}/{branch}/{path}"
 
 SCRIPT_NAMES = [
     "check_deps.py",
+    "check_gpu.py",
     "check_update.py",
     "convert_transcript.py",
     "extract_audio.py",
@@ -36,7 +37,7 @@ def load_config(script_dir: Path) -> dict:
     if not config_path.exists():
         print("CHECK_SKIPPED: No .video2pr_install.json found", file=sys.stderr)
         sys.exit(0)
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -44,14 +45,14 @@ def fetch_json(url: str) -> dict:
     """Fetch JSON from a URL."""
     req = urllib.request.Request(url, headers={"User-Agent": "video2pr-updater"})
     with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode())
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def fetch_text(url: str) -> str:
     """Fetch text content from a URL."""
     req = urllib.request.Request(url, headers={"User-Agent": "video2pr-updater"})
     with urllib.request.urlopen(req, timeout=10) as resp:
-        return resp.read().decode()
+        return resp.read().decode("utf-8")
 
 
 def check(config: dict) -> bool:
@@ -104,7 +105,7 @@ def apply_update(config: dict, script_dir: Path) -> None:
         try:
             content = fetch_text(url)
             dest = script_dir / name
-            dest.write_text(content)
+            dest.write_text(content, encoding="utf-8")
             updated.append(f"scripts/{name}")
         except urllib.error.HTTPError as e:
             print(f"  Warning: could not download {name}: {e}", file=sys.stderr)
@@ -113,7 +114,7 @@ def apply_update(config: dict, script_dir: Path) -> None:
     url = GITHUB_RAW.format(repo=repo, branch=branch, path="environment.yml")
     try:
         content = fetch_text(url)
-        (base_dir / "environment.yml").write_text(content)
+        (base_dir / "environment.yml").write_text(content, encoding="utf-8")
         updated.append("environment.yml")
     except urllib.error.HTTPError as e:
         print(f"  Warning: could not download environment.yml: {e}", file=sys.stderr)
@@ -125,7 +126,7 @@ def apply_update(config: dict, script_dir: Path) -> None:
         try:
             content = fetch_text(url)
             content = rewrite_paths(content, skill_dir)
-            (base_dir / "SKILL.md").write_text(content)
+            (base_dir / "SKILL.md").write_text(content, encoding="utf-8")
             updated.append("SKILL.md")
         except urllib.error.HTTPError as e:
             print(f"  Warning: could not download SKILL.md: {e}", file=sys.stderr)
@@ -133,7 +134,7 @@ def apply_update(config: dict, script_dir: Path) -> None:
     # Update installed_at in config
     config["installed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     config_path = base_dir / ".video2pr_install.json"
-    with open(config_path, "w") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
         f.write("\n")
 

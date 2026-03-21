@@ -19,6 +19,39 @@ CLI_TOOLS = ["ffmpeg", "ffprobe", "whisper"]
 PYTHON_IMPORTS = {"python-docx": "docx"}
 
 
+def parse_json_output(output: str):
+    """Extract a JSON value from mixed stdout/stderr style output.
+
+    Some `conda run` invocations on Windows emit extra banner or status lines
+    before/after the actual JSON payload. Prefer whole-line JSON first, then
+    fall back to scanning for the first decodable object/array in the text.
+    """
+    decoder = json.JSONDecoder()
+
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            value, end = decoder.raw_decode(line)
+        except json.JSONDecodeError:
+            continue
+        if line[end:].strip():
+            continue
+        return value
+
+    for idx, char in enumerate(output):
+        if char not in "{[":
+            continue
+        try:
+            value, _ = decoder.raw_decode(output[idx:])
+        except json.JSONDecodeError:
+            continue
+        return value
+
+    return None
+
+
 def find_conda():
     """Find the conda executable path, with Windows fallback.
 
@@ -78,7 +111,10 @@ def env_exists(env_name, conda_path="conda"):
     )
     if result.returncode != 0:
         return False
-    envs = json.loads(result.stdout).get("envs", [])
+    payload = parse_json_output(result.stdout)
+    if not isinstance(payload, dict):
+        return False
+    envs = payload.get("envs", [])
     return any(Path(e).name == env_name for e in envs)
 
 
@@ -108,8 +144,12 @@ def check_deps_in_env(conda_path="conda"):
         # Fallback: report everything as missing
         all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
         return {name: False for name in all_names}
+    payload = parse_json_output(result.stdout)
+    if isinstance(payload, dict):
+        return payload
 
-    return json.loads(result.stdout)
+    all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
+    return {name: False for name in all_names}
 
 
 def main():
@@ -158,8 +198,10 @@ def main():
             text=True,
         )
         if gpu_result.returncode == 0:
+            gpu_info = parse_json_output(gpu_result.stdout)
             try:
-                gpu_info = json.loads(gpu_result.stdout)
+                if not isinstance(gpu_info, dict):
+                    raise ValueError("missing JSON payload")
                 device = gpu_info.get("device", "cpu")
                 gpu_name = gpu_info.get("gpu_name")
                 cuda_version = gpu_info.get("cuda_version")
@@ -177,7 +219,7 @@ def main():
                         print(f"    {install_cmd}")
                 else:
                     print("  GPU: CPU only")
-            except (json.JSONDecodeError, KeyError):
+            except (ValueError, KeyError):
                 print("  GPU: detection failed")
 
 

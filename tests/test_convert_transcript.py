@@ -1,5 +1,7 @@
 """Tests for scripts/convert_transcript.py."""
 
+import json
+
 import pytest
 
 from conftest import import_script
@@ -122,3 +124,20 @@ def test_detect_format_by_extension(tmp_path):
     vtt = tmp_path / "test.vtt"
     vtt.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:05.000\ntext")
     assert ct.detect_format(vtt) == "vtt"
+
+
+def test_convert_writes_utf8_json(tmp_path):
+    transcript = tmp_path / "meeting.txt"
+    transcript.write_text("José (0:00:01)\nnegócio e migração", encoding="utf-8")
+    output_dir = tmp_path / "out"
+
+    ct.convert(transcript, output_dir, "google_txt")
+
+    transcript_json = json.loads((output_dir / "transcript.json").read_text(encoding="utf-8"))
+    meta_json = json.loads(
+        (output_dir / "external_transcript_meta.json").read_text(encoding="utf-8")
+    )
+
+    assert transcript_json["segments"][0]["speaker"] == "José"
+    assert transcript_json["segments"][0]["text"] == "negócio e migração"
+    assert meta_json["original_file"] == "meeting.txt"

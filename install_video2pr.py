@@ -122,12 +122,12 @@ def install_assistant(target: Path, name: str, dry_run: bool) -> list[str]:
     # Copy and rewrite SKILL.md
     src = REPO_ROOT / cfg["skill_md"]
     dst = dest / "SKILL.md"
-    content = src.read_text()
+    content = src.read_text(encoding="utf-8")
     content = rewrite_paths(content, skill_dir)
     if dry_run:
         print(f"  copy+rewrite {cfg['skill_md']} -> {dst.relative_to(target)}")
     else:
-        dst.write_text(content)
+        dst.write_text(content, encoding="utf-8")
     installed.append("SKILL.md")
 
     # Copy extra files within skill dir (e.g., openai.yaml)
@@ -164,7 +164,7 @@ def install_assistant(target: Path, name: str, dry_run: bool) -> list[str]:
     if dry_run:
         print(f"  write {config_path.relative_to(target)}")
     else:
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
             f.write("\n")
     installed.append(".video2pr_install.json")

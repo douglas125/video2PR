@@ -1,7 +1,8 @@
-"""Tests for scripts/check_deps.py — conda path discovery."""
+"""Tests for scripts/check_deps.py - conda path discovery and JSON parsing."""
 
 import sys
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pytest
@@ -86,3 +87,76 @@ class TestFindConda:
         ):
             result = check_deps.find_conda()
         assert result is None
+
+
+def test_parse_json_output_accepts_banner_wrapped_json():
+    output = 'banner line\n{"ffmpeg": true, "ffprobe": true}\ntrailer line\n'
+    assert check_deps.parse_json_output(output) == {
+        "ffmpeg": True,
+        "ffprobe": True,
+    }
+
+
+def test_check_deps_in_env_accepts_noisy_stdout():
+    stdout = (
+        "Preparing transaction...\n"
+        '{"ffmpeg": true, "ffprobe": true, "whisper": true, "python-docx": true}\n'
+        "done\n"
+    )
+    with patch(
+        "check_deps.subprocess.run",
+        return_value=CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""),
+    ):
+        result = check_deps.check_deps_in_env("conda")
+
+    assert result == {
+        "ffmpeg": True,
+        "ffprobe": True,
+        "whisper": True,
+        "python-docx": True,
+    }
+
+
+def test_check_deps_in_env_falls_back_when_json_missing():
+    with patch(
+        "check_deps.subprocess.run",
+        return_value=CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="banner only\nstill no json\n",
+            stderr="",
+        ),
+    ):
+        result = check_deps.check_deps_in_env("conda")
+
+    assert result == {
+        "ffmpeg": False,
+        "ffprobe": False,
+        "whisper": False,
+        "python-docx": False,
+    }
+
+
+def test_main_parses_gpu_json_with_banner(capsys):
+    gpu_stdout = (
+        "preparing...\n"
+        '{"device": "cuda", "gpu_name": "RTX 4090", "cuda_version": "12.4", '
+        '"torch_device_available": true, "install_command": null}\n'
+    )
+    deps = {"ffmpeg": True, "ffprobe": True, "whisper": True, "python-docx": True}
+
+    with (
+        patch("check_deps.find_conda", return_value="conda"),
+        patch("check_deps.env_exists", return_value=True),
+        patch("check_deps.check_deps_in_env", return_value=deps),
+        patch(
+            "check_deps.subprocess.run",
+            return_value=CompletedProcess(
+                args=[], returncode=0, stdout=gpu_stdout, stderr=""
+            ),
+        ),
+    ):
+        check_deps.main()
+
+    out = capsys.readouterr().out
+    assert "GPU: RTX 4090 (CUDA 12.4) — OK" in out

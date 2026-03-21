@@ -17,11 +17,11 @@ allowed-tools: Bash Read Write Glob
 
 Process a meeting recording into a transcript, structured summary, and codebase-grounded implementation plan.
 
-**Important — scope rules:**
+**Important - scope rules:**
 - The **codebase** is the repository root (the current working directory where this skill is invoked). All file scanning, analysis, and modifications must stay within this repository.
-- The video file path is an **input artifact only**. Its parent directory is unrelated to the codebase — do not scan, analyze, or modify files there.
+- The video file path is an **input artifact only**. Its parent directory is unrelated to the codebase - do not scan, analyze, or modify files there.
 - The only new directory created is `.video2pr/` inside the repo root for output files.
-- **Never reference this skill's internal workflow, phase names, or mechanics in user-facing output.** Do not say things like "the skill requires…", "per Phase 5…", or "the workflow pauses here for…". Communicate naturally about the work itself (e.g., "here's the implementation plan" not "Phase 5e requires plan approval").
+- **Never reference this skill's internal workflow, phase names, or mechanics in user-facing output.** Do not say things like "the skill requires...", "per Phase 5...", or "the workflow pauses here for...". Communicate naturally about the work itself (e.g., "here's the implementation plan" not "Phase 5e requires plan approval").
 
 ## Phase 0: Check for Updates
 
@@ -32,7 +32,7 @@ conda run -n video2pr python scripts/check_update.py
 ```
 
 - If output contains `UP_TO_DATE` or `CHECK_SKIPPED`: continue to Phase 1 silently.
-- If output contains `UPDATE_AVAILABLE`: display a **prominent warning** that a video2pr update is available and **ask whether to update now or continue with the current version**. Wait for the user's response. If they agree, run `conda run -n video2pr python scripts/check_update.py --apply` directly — do NOT just show the command for the user to run manually. Then continue to Phase 1.
+- If output contains `UPDATE_AVAILABLE`: display a **prominent warning** that a video2pr update is available and **ask whether to update now or continue with the current version**. Wait for the user's response. If they agree, run `conda run -n video2pr python scripts/check_update.py --apply` directly - do NOT just show the command for the user to run manually. Then continue to Phase 1.
 
 ## Phase 1: Dependency Check
 
@@ -48,7 +48,6 @@ If any dependencies show `MISSING:`, guide the user to install them:
 
 ```bash
 conda env create -f environment.yml
-conda activate video2pr
 ```
 
 After dependencies pass, check GPU status:
@@ -73,14 +72,10 @@ The user provides a video file path as the argument. Verify:
 conda run -n video2pr python scripts/get_duration.py --input "<video-path>"
 ```
 
-Set up the output directory:
-```bash
-# Use the video filename (without extension) as the subdirectory name
-mkdir -p .video2pr/<video-basename>
-```
+Set up the output directory by creating `.video2pr/<video-basename>/` if it does not already exist. Use the video filename (without extension) as the subdirectory name.
 
 **Check for existing outputs:** After creating the output directory, check whether prior runs already produced files in `.video2pr/<video-basename>/`:
-- If `transcript.json` exists: report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3a–3d entirely and go to Phase 4.
+- If `transcript.json` exists: report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3a-3d entirely and go to Phase 4.
 - If `audio.wav` exists but `transcript.json` does not: report "Found previously extracted audio" and ask whether to reuse it. If reusing, skip Phase 3a.
 - If `plan.md` or `summary.md` exist: note their presence but always regenerate them (codebase may have changed).
 
@@ -93,30 +88,24 @@ mkdir -p .video2pr/<video-basename>
 Always extract audio (needed for language detection even with external transcripts):
 
 ```bash
-conda run -n video2pr python scripts/extract_audio.py \
-  --input "<video-path>" \
-  --output-dir ".video2pr/<video-basename>"
+conda run -n video2pr python scripts/extract_audio.py --input "<video-path>" --output-dir ".video2pr/<video-basename>"
 ```
 
 ### Phase 3b: Check for External Transcript
 
 If an external transcript was found in Phase 2:
 
-- **With timestamps** → Convert and skip Whisper, go to Phase 3d:
+- **With timestamps** -> Convert and skip Whisper, go to Phase 3d:
   ```bash
-  conda run -n video2pr python scripts/convert_transcript.py \
-    --input "<transcript-path>" \
-    --output-dir ".video2pr/<video-basename>"
+  conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
   ```
 
-- **Without timestamps** → Convert to get speaker info, then continue to Phase 3c for Whisper transcription:
+- **Without timestamps** -> Convert to get speaker info, then continue to Phase 3c for Whisper transcription:
   ```bash
-  conda run -n video2pr python scripts/convert_transcript.py \
-    --input "<transcript-path>" \
-    --output-dir ".video2pr/<video-basename>"
+  conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
   ```
 
-If no external transcript → continue to Phase 3c.
+If no external transcript -> continue to Phase 3c.
 
 ### Phase 3c: Language Detection + Whisper Transcription
 
@@ -124,14 +113,12 @@ If no external transcript → continue to Phase 3c.
 
 Run GPU check: `conda run -n video2pr python scripts/check_gpu.py`
 
-- If `torch_device_available` is `false` AND `install_command` is not null: display a **prominent warning** to the user explaining that their GPU is available but not being used, note the ~5-20x speedup, and **ask whether to install GPU-accelerated PyTorch now or continue with CPU**. Wait for the user's response. If they agree, run the install command directly (e.g., `conda run -n video2pr <install_command>`) — do NOT just show the command for the user to run manually. After installation, re-run `check_gpu.py` to confirm GPU support is active before proceeding.
+- If `torch_device_available` is `false` AND `install_command` is not null: display a **prominent warning** to the user explaining that their GPU is available but not being used, note the ~5-20x speedup, and **ask whether to install GPU-accelerated PyTorch now or continue with CPU**. Wait for the user's response. If they agree, run the install command directly (e.g., `conda run -n video2pr <install_command>`) - do NOT just show the command for the user to run manually. After installation, re-run `check_gpu.py` to confirm GPU support is active before proceeding.
 - Otherwise, continue silently.
 
 1. Detect language (always uses base model for speed):
    ```bash
-   conda run -n video2pr python scripts/transcribe.py \
-     --input ".video2pr/<video-basename>/audio.wav" \
-     --detect-language
+   conda run -n video2pr python scripts/transcribe.py --input ".video2pr/<video-basename>/audio.wav" --detect-language
    ```
    Report: "Detected language: English (95% confidence)"
 
@@ -139,18 +126,14 @@ Run GPU check: `conda run -n video2pr python scripts/check_gpu.py`
 
 3. Run full transcription with the confirmed language:
    ```bash
-   conda run -n video2pr python scripts/transcribe.py \
-     --input ".video2pr/<video-basename>/audio.wav" \
-     --output-dir ".video2pr/<video-basename>" \
-     --model small \
-     --language <confirmed-language-code>
+   conda run -n video2pr python scripts/transcribe.py --input ".video2pr/<video-basename>/audio.wav" --output-dir ".video2pr/<video-basename>" --model small --language <confirmed-language-code>
    ```
 
 The default model is `small` (good balance of speed and accuracy). For faster but less accurate results use `--model base`; for higher accuracy (longer processing) use `--model medium` or `--model large`.
 
 ### Phase 3d: Speaker Enrichment (conditional)
 
-If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3c: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done directly (no script needed) — compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
+If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3c: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done directly (no script needed) - compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
 
 ## Phase 4: Analyze Transcript
 
@@ -163,10 +146,10 @@ When `speaker` fields are available, use them to attribute topics, action items,
 Analyze the transcript to identify:
 
 1. **Discussion topics** with timestamp ranges (start/end in HH:MM:SS)
-2. **Visual references** — phrases like "as you can see", "this slide shows", "let me show you", "on the screen", "this diagram", etc. Use the word-level `start` time to get precise timestamps for frame extraction.
-3. **Action items** — tasks assigned to people, deadlines mentioned
-4. **Decisions** — conclusions reached, agreements made
-5. **Feature requests** — new features or changes discussed
+2. **Visual references** - phrases like "as you can see", "this slide shows", "let me show you", "on the screen", "this diagram", etc. Use the word-level `start` time to get precise timestamps for frame extraction.
+3. **Action items** - tasks assigned to people, deadlines mentioned
+4. **Decisions** - conclusions reached, agreements made
+5. **Feature requests** - new features or changes discussed
 
 After completing this analysis, proceed directly to Phase 5. Do NOT ask for user approval or enter plan mode at this stage — the plan review checkpoint comes after the codebase analysis in Phase 5.
 
@@ -177,13 +160,13 @@ This phase bridges the meeting discussion with the actual codebase, producing a 
 ### Step 5a: Extract Actionable Items
 
 From the Phase 4 analysis, extract every actionable item discussed. Categorize each as one of:
-- **requirement** — something that must be built or satisfied
-- **feature request** — a new capability or enhancement
-- **bug report** — a defect or unexpected behavior described
-- **refactoring** — restructuring existing code without changing behavior
-- **architecture change** — significant structural change to the system
-- **config change** — environment, deployment, or configuration update
-- **documentation** — docs, comments, or knowledge-base updates
+- **requirement** - something that must be built or satisfied
+- **feature request** - a new capability or enhancement
+- **bug report** - a defect or unexpected behavior described
+- **refactoring** - restructuring existing code without changing behavior
+- **architecture change** - significant structural change to the system
+- **config change** - environment, deployment, or configuration update
+- **documentation** - docs, comments, or knowledge-base updates
 
 For each item, record:
 - Title (concise)
@@ -195,10 +178,10 @@ For each item, record:
 
 For each actionable item, search the codebase **within the repository root** using file listing and content search tools — not the video file's directory. Classify each item:
 
-- **Already exists** — the functionality or fix is already in place. Cite specific file paths and function/class names.
-- **Partially exists** — some relevant code exists but gaps remain. Cite existing code and describe what's missing.
-- **New** — nothing relevant found. Confirm what was searched (patterns, directories) and not found.
-- **Not applicable** — the item doesn't apply to this codebase (e.g., refers to an external system). Explain why.
+- **Already exists** - the functionality or fix is already in place. Cite specific file paths and function/class names.
+- **Partially exists** - some relevant code exists but gaps remain. Cite existing code and describe what's missing.
+- **New** - nothing relevant found. Confirm what was searched (patterns, directories) and not found.
+- **Not applicable** - the item doesn't apply to this codebase (e.g., refers to an external system). Explain why.
 
 ### Step 5c: Build Implementation Plan
 
@@ -309,15 +292,12 @@ See [plan.md](plan.md) for the full implementation plan.
 
 **Do NOT extract frames at this stage.** Only include the ready-to-run commands.
 
-## Frame Extraction (utility — available anytime)
+## Frame Extraction (utility - available anytime)
 
 At any point during Phase 4, Phase 5, or later during implementation, you can extract a frame from the video when visual context would help understand what was discussed:
 
 ```bash
-conda run -n video2pr python scripts/extract_frame.py \
-  --input "<video-path>" \
-  --output-dir ".video2pr/<video-basename>" \
-  --timestamp HH:MM:SS
+conda run -n video2pr python scripts/extract_frame.py --input "<video-path>" --output-dir ".video2pr/<video-basename>" --timestamp HH:MM:SS
 ```
 
 The frame is saved to `.video2pr/<video-basename>/frames/frame_00h03m22s.png` and can be viewed directly.
