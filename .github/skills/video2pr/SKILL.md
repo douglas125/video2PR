@@ -31,7 +31,7 @@ conda run -n video2pr python scripts/check_update.py
 ```
 
 - If output contains `UP_TO_DATE` or `CHECK_SKIPPED`: continue to Phase 1 silently.
-- If output contains `UPDATE_AVAILABLE`: tell the user: "A video2pr update is available. To update, run: `conda run -n video2pr python scripts/check_update.py --apply`". Then continue to Phase 1 — do NOT auto-update.
+- If output contains `UPDATE_AVAILABLE`: display a **prominent warning** that a video2pr update is available and **ask whether to update now or continue with the current version**. Wait for the user's response. If they agree, run `conda run -n video2pr python scripts/check_update.py --apply` directly — do NOT just show the command for the user to run manually. Then continue to Phase 1.
 
 ## Phase 1: Dependency Check
 
@@ -119,7 +119,6 @@ If no external transcript → continue to Phase 3c.
 Run GPU check: `conda run -n video2pr python scripts/check_gpu.py`
 
 - If `torch_device_available` is `false` AND `install_command` is not null: display a **prominent warning** to the user explaining that their GPU is available but not being used, note the ~5-20x speedup, and **ask whether to install GPU-accelerated PyTorch now or continue with CPU**. Wait for the user's response. If they agree, run the install command directly (e.g., `conda run -n video2pr <install_command>`) — do NOT just show the command for the user to run manually. After installation, re-run `check_gpu.py` to confirm GPU support is active before proceeding.
-- If an update was flagged in Phase 0 (`UPDATE_AVAILABLE`): remind the user: "A video2pr update is available — you can update after this run with: `conda run -n video2pr python scripts/check_update.py --apply`"
 - Otherwise, continue silently.
 
 1. Detect language (always uses base model for speed):
