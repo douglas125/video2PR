@@ -59,7 +59,7 @@ After dependencies pass, check GPU status:
 
 Interpret the JSON output:
 - If `torch_device_available` is `true`: report the GPU (e.g., "GPU acceleration: NVIDIA RTX 3080 via CUDA 12.4") and continue.
-- If `torch_device_available` is `false` and `install_command` is not null: briefly note that GPU is available but PyTorch can't use it yet. Do NOT prompt to install here — the actionable prompt will appear in Phase 3c, right before transcription when it matters most.
+- If `torch_device_available` is `false` and `install_command` is not null: briefly note that GPU is available but PyTorch can't use it yet. Do NOT prompt to install here — the actionable prompt will appear in Phase 3.3, right before transcription when it matters most.
 - If `device` is `"cpu"` and `install_command` is null: note "Running on CPU" and continue silently.
 
 ## Phase 2: Validate Input
@@ -76,15 +76,16 @@ conda run -n video2pr python scripts/get_duration.py --input "<video-path>"
 Set up the output directory by creating `.video2pr/<video-basename>/` if it does not already exist. Use the video filename (without extension) as the subdirectory name.
 
 **Check for existing outputs:** After creating the output directory, check whether prior runs already produced files in `.video2pr/<video-basename>/`:
-- If `transcript.json` exists: report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3a-3d entirely and go to Phase 4.
-- If `audio.wav` exists but `transcript.json` does not: report "Found previously extracted audio" and ask whether to reuse it. If reusing, skip Phase 3a.
+- If `transcript.json` exists: report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3.1-3.4 entirely and go to Phase 4.
+- If `audio.wav` exists but `transcript.json` does not: report "Found previously extracted audio" and ask whether to reuse it. If reusing, skip Phase 3.1.
 - If `plan.md` or `summary.md` exist: note their presence but always regenerate them (codebase may have changed).
+- If `progress.md` exists: report "Found progress tracker from previous run(s) — N of M tasks completed" (read the file to get counts). This file will be used in Phase 5 to carry forward completion status.
 
 **Check for external transcript:** Search for transcript files in the same directory as the video, matching the video basename with extensions: `.sbv`, `.vtt`, `.txt`, `.docx`. Also accept a user-provided transcript path. If found, report: "Found external transcript: meeting.vtt (MS Teams VTT format)"
 
 ## Phase 3: Extract & Transcribe
 
-### Phase 3a: Extract Audio
+### Phase 3.1: Extract Audio
 
 Always extract audio (needed for language detection even with external transcripts):
 
@@ -92,23 +93,23 @@ Always extract audio (needed for language detection even with external transcrip
 conda run -n video2pr python scripts/extract_audio.py --input "<video-path>" --output-dir ".video2pr/<video-basename>"
 ```
 
-### Phase 3b: Check for External Transcript
+### Phase 3.2: Check for External Transcript
 
 If an external transcript was found in Phase 2:
 
-- **With timestamps** -> Convert and skip Whisper, go to Phase 3d:
+- **With timestamps** -> Convert and skip Whisper, go to Phase 3.4:
   ```bash
   conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
   ```
 
-- **Without timestamps** -> Convert to get speaker info, then continue to Phase 3c for Whisper transcription:
+- **Without timestamps** -> Convert to get speaker info, then continue to Phase 3.3 for Whisper transcription:
   ```bash
   conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
   ```
 
-If no external transcript -> continue to Phase 3c.
+If no external transcript -> continue to Phase 3.3.
 
-### Phase 3c: Language Detection + Whisper Transcription
+### Phase 3.3: Language Detection + Whisper Transcription
 
 **Pre-transcription check:** Before starting transcription (the longest step), re-check GPU status and surface any pending notices so the user can act on them before waiting:
 
@@ -132,9 +133,9 @@ Run GPU check: `conda run -n video2pr python scripts/check_gpu.py`
 
 The default model is `small` (good balance of speed and accuracy). For faster but less accurate results use `--model base`; for higher accuracy (longer processing) use `--model medium` or `--model large`.
 
-### Phase 3d: Speaker Enrichment (conditional)
+### Phase 3.4: Speaker Enrichment (conditional)
 
-If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3c: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done by Claude directly (no script needed) - compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
+If an external transcript WITHOUT timestamps was used AND Whisper ran in Phase 3.3: match text between the Whisper output and the external transcript to add `speaker` fields to the Whisper segments. This is done by Claude directly (no script needed) - compare overlapping text to attribute speakers from the external transcript to Whisper's timestamped segments.
 
 ## Phase 4: Analyze Transcript
 
@@ -158,7 +159,7 @@ After completing this analysis, proceed directly to Phase 5. Do NOT ask for user
 
 This phase bridges the meeting discussion with the actual codebase, producing a concrete plan of what to build or change.
 
-### Step 5a: Extract Actionable Items
+### Step 5.1: Extract Actionable Items
 
 From the Phase 4 analysis, extract every actionable item discussed. Categorize each as one of:
 - **requirement** - something that must be built or satisfied
@@ -175,7 +176,7 @@ For each item, record:
 - One-sentence description
 - Verbatim transcript excerpt (1-3 sentences, copied exactly from the transcript) with start/end timestamps — this grounds the task in what was actually said
 
-### Step 5b: Scan Codebase
+### Step 5.2: Scan Codebase
 
 For each actionable item, use Glob and Read to search the codebase **within the repository root** — not the video file's directory. Classify each item:
 
@@ -184,11 +185,21 @@ For each actionable item, use Glob and Read to search the codebase **within the 
 - **New** - nothing relevant found. Confirm what was searched (patterns, directories) and not found.
 - **Not applicable** - the item doesn't apply to this codebase (e.g., refers to an external system). Explain why.
 
-### Step 5c: Build Implementation Plan
+### Step 5.3: Reconcile with Existing Progress (conditional)
+
+If `.video2pr/<video-basename>/progress.md` exists from a prior run:
+
+1. Read `progress.md` and extract tasks marked `[x]` (completed).
+2. For each completed task, match it to the current plan's tasks by **title** (fuzzy match — titles may vary slightly across regenerations; use transcript excerpt as tiebreaker if titles are ambiguous).
+   - If the codebase scan (Step 5.2) confirms the code still exists → carry forward the `[x]` completion marker.
+   - If the code was removed or reverted → clear the marker (task needs re-implementation).
+3. Completed tasks in old progress that have no match in the new plan → archive them in a "Previously Completed (no longer in plan)" note at the bottom of `progress.md` for reference. Do not add them back to the plan.
+
+### Step 5.4: Build Implementation Plan
 
 Create an ordered list of tasks, each with:
 - **Priority**: P0-Blocker, P1-High, P2-Medium, P3-Low
-- **Status**: from Step 5b (already exists / partially exists / new / not applicable)
+- **Status**: from Step 5.2 (already exists / partially exists / new / not applicable)
 - **Affected files**: specific file paths that need to be created or modified
 - **Approach**: 2-5 sentences describing the concrete implementation approach
 - **Dependencies**: references to other tasks that must be completed first (if any)
@@ -196,7 +207,7 @@ Create an ordered list of tasks, each with:
 
 Ordering: P0 items first, then within each priority level, dependency-free tasks before dependent ones.
 
-### Step 5d: Write plan.md
+### Step 5.5: Write plan.md
 
 Write the implementation plan to `.video2pr/<video-basename>/plan.md` with:
 
@@ -238,9 +249,40 @@ Task 3 (independent)
 - <item> — <reason>
 ```
 
-### Step 5e: Enter Plan Mode
+After writing `plan.md`, also write or update `.video2pr/<video-basename>/progress.md`:
 
-This is the ONLY user approval checkpoint before Phase 6. After writing `plan.md`, promptly use `EnterPlanMode` to present the implementation plan for review — do not add extra interaction or delays before entering plan mode. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize. Use `ExitPlanMode` once the user confirms the plan, then proceed to Phase 6.
+- **First run** (no existing `progress.md`): create it from the plan. All actionable tasks start unchecked (`[ ]`). Tasks with status "already exists" or "not applicable" are marked `--`.
+- **Subsequent run** (existing `progress.md`): update the Task Checklist to reflect the new plan's tasks, carrying forward `[x]` marks for tasks confirmed still implemented in Step 5.3. Increment the run counter. Preserve all existing Completion Log entries.
+
+Format for `progress.md`:
+
+```markdown
+# Progress: <video-basename>
+
+Last updated: YYYY-MM-DD (run #N)
+
+## Task Checklist
+
+| # | Task | Priority | Implemented |
+|---|------|----------|-------------|
+| 1 | <title> | P0 | [ ] |
+| 2 | <title> | P1 | [x] Run #1 |
+| 3 | <title> | P0 | -- (already exists) |
+
+## Completion Log
+
+### Run #1 — YYYY-MM-DD
+- **Task 2**: <title> — files modified: `src/foo.py`, `src/bar.py`
+```
+
+- `[x] Run #N` = completed in run N. `[ ]` = pending. `--` = no action needed (already exists / not applicable).
+- The Completion Log is append-only — each run adds a section recording what was done.
+
+### Step 5.6: Enter Plan Mode
+
+This is the ONLY user approval checkpoint before Phase 6. After writing `plan.md` and `progress.md`, promptly use `EnterPlanMode` to present the implementation plan for review — do not add extra interaction or delays before entering plan mode. Walk through the proposed tasks, highlight the top priorities, and let the user approve, adjust, or reprioritize. Use `ExitPlanMode` once the user confirms the plan, then proceed to Phase 6.
+
+If prior progress exists, lead the plan presentation with a progress summary: "N of M tasks from the meeting have been implemented in previous runs. Remaining: X tasks (Y high-priority)." Then present remaining tasks, with completed tasks shown but de-emphasized.
 
 ## Phase 6: Generate Summary
 
@@ -281,6 +323,10 @@ See [plan.md](plan.md) for the full implementation plan.
 - [ ] <P0/P1 task title> (Task #<n>)
 - [ ] <P0/P1 task title> (Task #<n>)
 
+If `progress.md` exists, reflect completion status in this list:
+- [x] <task title> (Task #<n>) — completed in Run #1
+- [ ] <task title> (Task #<n>)
+
 ## Action Items
 - [ ] <action> — assigned to <person> (HH:MM:SS)
 
@@ -313,6 +359,7 @@ After completion, confirm these files exist in `.video2pr/<video-basename>/`:
 - `transcript.json` — JSON with segment timestamps (and word-level if Whisper-generated)
 - `plan.md` — codebase-grounded implementation plan
 - `summary.md` — structured meeting analysis with implementation plan summary
+- `progress.md` — task completion tracker (persists across runs)
 
 **Created only when Whisper transcription was used (no external transcript with timestamps):**
 - `transcript.srt` — SRT transcript with timestamps
@@ -323,9 +370,9 @@ After completion, confirm these files exist in `.video2pr/<video-basename>/`:
 
 ## Phase 7: Offer to Implement
 
-After the output checklist passes, present the top-priority tasks from `plan.md` and offer to begin implementation:
+After the output checklist passes, read `progress.md` and present remaining (uncompleted) tasks from `plan.md`, ordered by priority. If prior progress exists, note: "N tasks already completed in previous runs — showing remaining work."
 
-1. List all P0 and P1 tasks with their titles and affected files
+1. List all incomplete P0 and P1 tasks with their titles and affected files
 2. Ask the user which task(s) to start with
 3. Only begin implementation after the user explicitly selects task(s)
 
@@ -333,4 +380,7 @@ When implementing a task:
 - Follow the approach described in `plan.md`
 - Respect dependency ordering — do not start a task whose dependencies are incomplete
 - Work within the repository root (same scope rules as Phase 5)
-- After completing each task, report what was changed and ask whether to continue with the next task
+- After completing each task:
+  1. Mark the task as `[x] Run #N` in the `progress.md` Task Checklist
+  2. Append to the Completion Log: task number, title, and files modified
+  3. Report what was changed and ask whether to continue with the next task
