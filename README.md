@@ -90,9 +90,10 @@ The `--model` flag controls the quality/speed tradeoff for transcription:
 | `base` | 74M | ~10x realtime | Quick drafts, testing, short meetings |
 | `small` | 244M | ~4x realtime | **Default** - good balance of speed and accuracy |
 | `medium` | 769M | ~1.5x realtime | Important meetings where accuracy matters |
-| `large` | 1550M | ~0.5x realtime | Maximum accuracy, multilingual content |
+| `large-v3` | 1550M | ~0.5x realtime | Maximum accuracy, multilingual content |
+| `turbo` | 809M | ~3x realtime | Fast with good accuracy (faster-whisper only) |
 
-Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower. The skill prompts you to install GPU-accelerated PyTorch if a compatible GPU is detected but not configured.
+Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower. The skill prompts you to install CUDA support if a compatible GPU is detected but not configured.
 
 ## Standalone Scripts
 

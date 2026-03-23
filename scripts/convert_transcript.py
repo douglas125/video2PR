@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parse external transcripts (Google Meet, MS Teams) into canonical JSON format."""
+"""Parse external transcripts (Google Meet, MS Teams, Zoom) into canonical JSON format."""
 
 import argparse
 import json
@@ -21,11 +21,26 @@ def detect_format(input_path: Path) -> str:
     content = input_path.read_text(encoding="utf-8", errors="replace")
 
     if ext == ".vtt" or content.strip().startswith("WEBVTT"):
-        return "vtt"
+        # Teams VTT has <v Speaker> tags
+        if re.search(r"<v\s+[^>]+>", content):
+            return "teams_vtt"
+        # Zoom VTT has "Speaker Name: text" inline (after timestamp lines)
+        # Look for pattern after a timestamp arrow line
+        if re.search(
+            r"-->\s*[\d:.]+.*\n[A-Z][\w\s]+:\s+\S",
+            content,
+        ):
+            return "zoom_vtt"
+        # Generic VTT fallback (no speaker detection)
+        return "zoom_vtt"  # default VTT to zoom parser (handles both with/without speakers)
 
     # Google Meet .txt: lines like "Speaker Name (0:12:34)"
     if re.search(r"^.+ \(\d+:\d+:\d+\)$", content, re.MULTILINE):
         return "google_txt"
+
+    # Zoom TXT: "Speaker Name   HH:MM:SS" with 2+ spaces, text on next line
+    if re.search(r"^.+\s{2,}\d{2}:\d{2}:\d{2}\s*$", content, re.MULTILINE):
+        return "zoom_txt"
 
     # SBV pattern: "0:00:01.234,0:00:05.678"
     if re.search(r"^\d+:\d+:\d+\.\d+,", content, re.MULTILINE):
@@ -97,7 +112,7 @@ def parse_vtt_timestamp(ts: str) -> float:
     return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
 
 
-def parse_vtt(content: str) -> list[dict]:
+def parse_teams_vtt(content: str) -> list[dict]:
     """Parse MS Teams VTT format with <v Name> speaker tags."""
     segments = []
     # Remove WEBVTT header and any NOTE blocks
@@ -150,6 +165,109 @@ def parse_vtt(content: str) -> list[dict]:
             "speaker": speaker,
             "words": [],
         })
+
+    return segments
+
+
+def parse_zoom_vtt(content: str) -> list[dict]:
+    """Parse Zoom VTT format with inline 'Speaker Name: text' speaker attribution."""
+    segments = []
+    # Remove WEBVTT header and any metadata lines (Kind:, Language:)
+    content = re.sub(r"^WEBVTT.*?\n\n", "", content, flags=re.DOTALL)
+    content = re.sub(r"NOTE.*?\n\n", "", content, flags=re.DOTALL)
+
+    blocks = re.split(r"\n\n+", content.strip())
+
+    for block in blocks:
+        lines = block.strip().split("\n")
+        if not lines:
+            continue
+
+        # Find timestamp line
+        ts_line = None
+        text_lines = []
+        for line in lines:
+            ts_match = re.match(
+                r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line
+            )
+            if not ts_match and re.match(
+                r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line
+            ):
+                ts_match = re.match(
+                    r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line
+                )
+            if ts_match:
+                ts_line = ts_match
+            elif ts_line is not None:
+                text_lines.append(line)
+
+        if not ts_line or not text_lines:
+            continue
+
+        start = parse_vtt_timestamp(ts_line.group(1))
+        end = parse_vtt_timestamp(ts_line.group(2))
+        text = "\n".join(text_lines).strip()
+
+        # Zoom VTT: "Speaker Name: text" inline format
+        speaker = None
+        # Match "Name: text" but avoid false positives on common patterns
+        # like "Time: 3pm" or "Note: something" by requiring at least 2 words
+        # or a capitalized multi-word name
+        speaker_match = re.match(r"^([A-Z][\w\s.-]+?):\s+(.+)$", text, re.DOTALL)
+        if speaker_match:
+            candidate_speaker = speaker_match.group(1).strip()
+            # Avoid single common words that look like labels, not names
+            label_words = {"note", "time", "update", "action", "topic", "summary", "status"}
+            if candidate_speaker.lower() not in label_words:
+                speaker = candidate_speaker
+                text = speaker_match.group(2).strip()
+
+        segments.append({
+            "start": start,
+            "end": end,
+            "text": text,
+            "speaker": speaker,
+            "words": [],
+        })
+
+    return segments
+
+
+def parse_zoom_txt(content: str) -> list[dict]:
+    """Parse Zoom TXT format with 'Speaker Name   HH:MM:SS' headers."""
+    segments = []
+    # Match lines like "Speaker Name   00:12:34" (2+ spaces between name and time)
+    header_pattern = re.compile(r"^(.+?)\s{2,}(\d{2}:\d{2}:\d{2})\s*$", re.MULTILINE)
+    headers = list(header_pattern.finditer(content))
+
+    for i, match in enumerate(headers):
+        speaker = match.group(1).strip()
+        ts_str = match.group(2)
+        parts = ts_str.split(":")
+        start = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+
+        # Text is between this header and the next
+        text_start = match.end()
+        text_end = headers[i + 1].start() if i + 1 < len(headers) else len(content)
+        text = content[text_start:text_end].strip()
+
+        # End time = next segment's start, or start + 30s for last segment
+        end = (
+            int(headers[i + 1].group(2).split(":")[0]) * 3600
+            + int(headers[i + 1].group(2).split(":")[1]) * 60
+            + int(headers[i + 1].group(2).split(":")[2])
+            if i + 1 < len(headers)
+            else start + 30
+        )
+
+        if text:
+            segments.append({
+                "start": float(start),
+                "end": float(end),
+                "text": text,
+                "speaker": speaker,
+                "words": [],
+            })
 
     return segments
 
@@ -263,15 +381,19 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
         segments = parse_teams_docx(input_path)
     else:
         content = input_path.read_text(encoding="utf-8", errors="replace")
-        if fmt == "sbv":
-            segments = parse_sbv(content)
-        elif fmt == "vtt":
-            segments = parse_vtt(content)
-        elif fmt == "google_txt":
-            segments = parse_google_txt(content)
-        else:
+        parsers = {
+            "sbv": parse_sbv,
+            "teams_vtt": parse_teams_vtt,
+            "zoom_vtt": parse_zoom_vtt,
+            "zoom_txt": parse_zoom_txt,
+            "google_txt": parse_google_txt,
+            "vtt": parse_zoom_vtt,  # generic VTT uses zoom parser (handles both)
+        }
+        parser = parsers.get(fmt)
+        if parser is None:
             print(f"Unknown format: {fmt}", file=sys.stderr)
             sys.exit(1)
+        segments = parser(content)
 
     print(f"Parsed {len(segments)} segments")
 
@@ -290,7 +412,10 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
     # Write metadata
     format_labels = {
         "sbv": "google_meet_sbv",
-        "vtt": "ms_teams_vtt",
+        "teams_vtt": "ms_teams_vtt",
+        "vtt": "vtt_generic",
+        "zoom_vtt": "zoom_vtt",
+        "zoom_txt": "zoom_txt",
         "google_txt": "google_meet_txt",
         "teams_docx": "ms_teams_docx",
     }
@@ -324,7 +449,7 @@ def main():
     parser.add_argument(
         "--format",
         default="auto",
-        choices=["auto", "sbv", "vtt", "google_txt", "teams_docx"],
+        choices=["auto", "sbv", "vtt", "teams_vtt", "zoom_vtt", "zoom_txt", "google_txt", "teams_docx"],
         help="Transcript format (default: auto-detect)",
     )
     args = parser.parse_args()

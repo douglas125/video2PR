@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Detect GPU hardware and PyTorch device availability.
+"""Detect GPU hardware and CTranslate2 device availability for faster-whisper.
 
 Outputs structured JSON to stdout. Also exposes a check_gpu() function
 for programmatic use.
@@ -81,43 +81,25 @@ def _parse_cuda_version():
         return None
 
 
-def _map_cuda_to_wheel(cuda_version_str):
-    """Map a CUDA version string to the PyTorch wheel suffix.
+def _check_ctranslate2_cuda():
+    """Check if CTranslate2 (used by faster-whisper) supports CUDA.
 
-    Returns e.g. "cu124", "cu121", "cu118".
+    Returns (installed, cuda_available).
     """
     try:
-        parts = cuda_version_str.split(".")
-        major = int(parts[0])
-        minor = int(parts[1]) if len(parts) > 1 else 0
-    except (ValueError, IndexError):
-        return "cu124"  # default to latest supported
-
-    if major >= 13 or (major == 12 and minor >= 4):
-        return "cu124"
-    elif major == 12 and minor >= 1:
-        return "cu121"
-    else:
-        return "cu118"
-
-
-def _check_torch():
-    """Check PyTorch installation and device availability.
-
-    Returns (installed, version, cuda_available, mps_available).
-    """
-    try:
-        import torch
-
-        cuda_avail = torch.cuda.is_available()
-        mps_avail = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
-        return True, torch.__version__, cuda_avail, mps_avail
-    except ImportError:
-        return False, None, False, False
+        import ctranslate2
+        supported = ctranslate2.get_supported_compute_types("cuda")
+        return True, len(supported) > 0
+    except (ImportError, RuntimeError, Exception):
+        try:
+            import ctranslate2
+            return True, False
+        except ImportError:
+            return False, False
 
 
 def check_gpu():
-    """Detect GPU hardware and PyTorch device status.
+    """Detect GPU hardware and CTranslate2 device status.
 
     Returns a dict with detection results.
     """
@@ -131,41 +113,31 @@ def check_gpu():
     # Detect Apple Silicon
     is_apple_silicon = plat == "Darwin" and arch == "arm64"
 
-    # Check PyTorch
-    torch_installed, torch_version, cuda_avail, mps_avail = _check_torch()
+    # Check CTranslate2 (faster-whisper backend)
+    ct2_installed, ct2_cuda = _check_ctranslate2_cuda()
 
     # Determine device and availability
-    if cuda_avail:
+    if ct2_cuda and gpu_name:
         device = "cuda"
-        torch_device_available = True
-    elif mps_avail:
-        device = "mps"
-        torch_device_available = True
+        gpu_available = True
     else:
         device = "cpu"
-        torch_device_available = False
+        gpu_available = False
 
-    # Build install command if GPU exists but torch can't use it
+    # Build install guidance if GPU exists but CTranslate2 can't use CUDA
     install_command = None
-    if gpu_name and not cuda_avail:
-        # NVIDIA GPU present but torch can't use CUDA
-        wheel_tag = _map_cuda_to_wheel(cuda_version) if cuda_version else "cu124"
-        install_command = (
-            f"pip install torch torchvision torchaudio"
-            f" --index-url https://download.pytorch.org/whl/{wheel_tag}"
-        )
-    elif is_apple_silicon and not mps_avail:
-        install_command = "pip install --upgrade torch torchvision torchaudio"
+    if gpu_name and not ct2_cuda:
+        # NVIDIA GPU present but CTranslate2 lacks CUDA support
+        # This typically means CUDA toolkit needs to be installed
+        install_command = "pip install --upgrade ctranslate2"
 
     # Build message
     if device == "cuda":
         msg = f"GPU acceleration: {gpu_name} via CUDA {cuda_version or 'unknown'}"
-    elif device == "mps":
-        msg = "GPU acceleration: Apple Silicon (MPS)"
     elif gpu_name:
-        msg = f"GPU detected ({gpu_name}) but PyTorch is CPU-only"
+        msg = f"GPU detected ({gpu_name}) but CUDA not available for CTranslate2"
     elif is_apple_silicon:
-        msg = "Apple Silicon detected but MPS not available in PyTorch"
+        msg = "Apple Silicon detected — faster-whisper uses CPU (CTranslate2 optimized)"
     else:
         msg = "Running on CPU (no GPU detected)"
 
@@ -175,9 +147,8 @@ def check_gpu():
         "device": device,
         "gpu_name": gpu_name,
         "cuda_version": cuda_version,
-        "torch_installed": torch_installed,
-        "torch_version": torch_version,
-        "torch_device_available": torch_device_available,
+        "ct2_installed": ct2_installed,
+        "gpu_available": gpu_available,
         "install_command": install_command,
         "message": msg,
     }

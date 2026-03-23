@@ -7,6 +7,6 @@ dependencies:
   - ffmpeg
   - pip
   - pip:
-      - openai-whisper
+      - faster-whisper
       - python-docx
       - pytest
