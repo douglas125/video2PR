@@ -100,7 +100,7 @@ def test_parse_json_output_accepts_banner_wrapped_json():
 def test_check_deps_in_env_accepts_noisy_stdout():
     stdout = (
         "Preparing transaction...\n"
-        '{"ffmpeg": true, "ffprobe": true, "whisper": true, "python-docx": true}\n'
+        '{"ffmpeg": true, "ffprobe": true, "faster-whisper": true, "python-docx": true}\n'
         "done\n"
     )
     with patch(
@@ -112,7 +112,7 @@ def test_check_deps_in_env_accepts_noisy_stdout():
     assert result == {
         "ffmpeg": True,
         "ffprobe": True,
-        "whisper": True,
+        "faster-whisper": True,
         "python-docx": True,
     }
 
@@ -132,7 +132,7 @@ def test_check_deps_in_env_falls_back_when_json_missing():
     assert result == {
         "ffmpeg": False,
         "ffprobe": False,
-        "whisper": False,
+        "faster-whisper": False,
         "python-docx": False,
     }
 
@@ -141,9 +141,9 @@ def test_main_parses_gpu_json_with_banner(capsys):
     gpu_stdout = (
         "preparing...\n"
         '{"device": "cuda", "gpu_name": "RTX 4090", "cuda_version": "12.4", '
-        '"torch_device_available": true, "install_command": null}\n'
+        '"gpu_available": true, "install_command": null}\n'
     )
-    deps = {"ffmpeg": True, "ffprobe": True, "whisper": True, "python-docx": True}
+    deps = {"ffmpeg": True, "ffprobe": True, "faster-whisper": True, "python-docx": True}
 
     with (
         patch("check_deps.find_conda", return_value="conda"),

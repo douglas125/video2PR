@@ -15,8 +15,8 @@ from pathlib import Path
 
 
 ENV_NAME = "video2pr"
-CLI_TOOLS = ["ffmpeg", "ffprobe", "whisper"]
-PYTHON_IMPORTS = {"python-docx": "docx"}
+CLI_TOOLS = ["ffmpeg", "ffprobe"]
+PYTHON_IMPORTS = {"faster-whisper": "faster_whisper", "python-docx": "docx"}
 
 
 def parse_json_output(output: str):
@@ -205,15 +205,13 @@ def main():
                 device = gpu_info.get("device", "cpu")
                 gpu_name = gpu_info.get("gpu_name")
                 cuda_version = gpu_info.get("cuda_version")
-                available = gpu_info.get("torch_device_available", False)
+                available = gpu_info.get("gpu_available", False)
                 install_cmd = gpu_info.get("install_command")
 
                 if device == "cuda" and available:
                     print(f"  GPU: {gpu_name} (CUDA {cuda_version}) — OK")
-                elif device == "mps" and available:
-                    print("  GPU: Apple Silicon (MPS) — OK")
                 elif gpu_name and not available:
-                    print(f"  GPU: {gpu_name} detected, PyTorch is CPU-only")
+                    print(f"  GPU: {gpu_name} detected, CTranslate2 is CPU-only")
                     if install_cmd:
                         print(f"  To enable GPU acceleration (~5-20x faster transcription):")
                         print(f"    {install_cmd}")

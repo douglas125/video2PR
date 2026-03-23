@@ -43,95 +43,65 @@ def test_nvidia_cuda_working(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(subprocess, "run", _fake_nvidia_smi())
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: True)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    # Mock ctranslate2 with CUDA support
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: ["float16", "int8"] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     result = gpu.check_gpu()
     assert result["device"] == "cuda"
-    assert result["torch_device_available"] is True
+    assert result["gpu_available"] is True
     assert result["install_command"] is None
     assert result["gpu_name"] == "NVIDIA RTX 3080"
     assert result["cuda_version"] == "12.4"
 
 
-def test_nvidia_torch_cpu_only(monkeypatch):
+def test_nvidia_ct2_cpu_only(monkeypatch):
     monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr("platform.machine", lambda: "x86_64")
     monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(subprocess, "run", _fake_nvidia_smi())
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    # Mock ctranslate2 without CUDA support
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: [] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     result = gpu.check_gpu()
     assert result["device"] == "cpu"
-    assert result["torch_device_available"] is False
+    assert result["gpu_available"] is False
     assert result["install_command"] is not None
-    assert "cu124" in result["install_command"]
 
 
-def test_nvidia_torch_missing(monkeypatch):
+def test_nvidia_ct2_missing(monkeypatch):
     monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr("platform.machine", lambda: "x86_64")
     monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(subprocess, "run", _fake_nvidia_smi())
 
-    # Setting a module to None in sys.modules causes import to raise ImportError
-    monkeypatch.setitem(sys.modules, "torch", None)
+    # ctranslate2 not installed
+    monkeypatch.setitem(sys.modules, "ctranslate2", None)
 
     result = gpu.check_gpu()
-    assert result["torch_installed"] is False
+    assert result["ct2_installed"] is False
     assert result["install_command"] is not None
 
 
-def test_apple_silicon_mps(monkeypatch):
+def test_apple_silicon(monkeypatch):
     monkeypatch.setattr("platform.system", lambda: "Darwin")
     monkeypatch.setattr("platform.machine", lambda: "arm64")
     monkeypatch.setattr("shutil.which", lambda x: None)
     monkeypatch.setattr(subprocess, "run", _nvidia_smi_missing)
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: True)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: [] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     result = gpu.check_gpu()
-    assert result["device"] == "mps"
-    assert result["torch_device_available"] is True
+    assert result["device"] == "cpu"
+    assert result["gpu_available"] is False
     assert result["install_command"] is None
-
-
-def test_apple_silicon_no_mps(monkeypatch):
-    monkeypatch.setattr("platform.system", lambda: "Darwin")
-    monkeypatch.setattr("platform.machine", lambda: "arm64")
-    monkeypatch.setattr("shutil.which", lambda x: None)
-    monkeypatch.setattr(subprocess, "run", _nvidia_smi_missing)
-
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.1.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-
-    result = gpu.check_gpu()
-    assert result["device"] == "cpu"
-    assert result["install_command"] is not None
-    assert "upgrade" in result["install_command"]
+    assert "Apple Silicon" in result["message"]
 
 
 def test_cpu_only_no_gpu(monkeypatch):
@@ -140,13 +110,9 @@ def test_cpu_only_no_gpu(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda x: None)
     monkeypatch.setattr(subprocess, "run", _nvidia_smi_missing)
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: [] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     result = gpu.check_gpu()
     assert result["device"] == "cpu"
@@ -163,26 +129,32 @@ def test_nvidia_smi_parse_error(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", garbage_nvidia_smi)
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: [] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     # Should not crash
     result = gpu.check_gpu()
     assert result["device"] == "cpu"
 
 
-def test_cuda_version_mapping():
-    assert gpu._map_cuda_to_wheel("11.8") == "cu118"
-    assert gpu._map_cuda_to_wheel("12.1") == "cu121"
-    assert gpu._map_cuda_to_wheel("12.3") == "cu121"
-    assert gpu._map_cuda_to_wheel("12.4") == "cu124"
-    assert gpu._map_cuda_to_wheel("12.6") == "cu124"
-    assert gpu._map_cuda_to_wheel("13.0") == "cu124"
+def test_json_output(monkeypatch, capsys):
+    """check_gpu.py main() outputs valid JSON."""
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr("platform.machine", lambda: "x86_64")
+    monkeypatch.setattr("shutil.which", lambda x: None)
+    monkeypatch.setattr(subprocess, "run", _nvidia_smi_missing)
+
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: [] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
+
+    gpu.main()
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert "device" in data
+    assert "message" in data
+    assert "gpu_available" in data
 
 
 def test_windows_nvidia_smi_path(monkeypatch):
@@ -196,37 +168,11 @@ def test_windows_nvidia_smi_path(monkeypatch):
     )
     monkeypatch.setattr(gpu, "_parse_cuda_version", lambda: "12.4")
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    # CTranslate2 without CUDA
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: [] if device == "cuda" else ["int8"]
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     result = gpu.check_gpu()
     assert result["gpu_name"] == "NVIDIA RTX 4090"
     assert result["install_command"] is not None
-    assert "cu124" in result["install_command"]
-
-
-def test_json_output(monkeypatch, capsys):
-    """check_gpu.py main() outputs valid JSON."""
-    monkeypatch.setattr("platform.system", lambda: "Linux")
-    monkeypatch.setattr("platform.machine", lambda: "x86_64")
-    monkeypatch.setattr("shutil.which", lambda x: None)
-    monkeypatch.setattr(subprocess, "run", _nvidia_smi_missing)
-
-    fake_torch = types.ModuleType("torch")
-    fake_torch.__version__ = "2.3.0"
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
-    fake_torch.backends = types.SimpleNamespace(
-        mps=types.SimpleNamespace(is_available=lambda: False)
-    )
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-
-    gpu.main()
-    captured = capsys.readouterr()
-    data = json.loads(captured.out)
-    assert "device" in data
-    assert "message" in data
