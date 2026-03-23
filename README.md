@@ -75,11 +75,12 @@ Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`)
 
 1. Extracts audio from video (mp4, mkv, avi, mov, webm)
 2. Detects spoken language with confidence scoring - asks for confirmation if < 80%
-3. Transcribes via Whisper with word-level timestamps, or imports an external transcript (Google Meet SBV/TXT, MS Teams VTT/DOCX) with speaker attribution
+3. Transcribes via Whisper with word-level timestamps, or imports an external transcript (Google Meet SBV/TXT, MS Teams VTT/DOCX, Zoom VTT/TXT) with speaker attribution
 4. Analyzes the codebase against what was discussed and produces a concrete implementation plan (`plan.md`)
 5. Produces `summary.md` with topics, action items, decisions, visual reference commands, and a link to the implementation plan
+6. Optionally creates GitHub Issues from plan tasks (each confirmed individually before creation)
 
-If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically.
+If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically. Zoom, Google Meet, and MS Teams transcript formats are all auto-detected.
 
 ## Whisper Model Choices
 
@@ -101,8 +102,8 @@ Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower.
 # Detect language
 conda run -n video2pr python scripts/transcribe.py --input audio.wav --detect-language
 
-# Transcribe with explicit language
-conda run -n video2pr python scripts/transcribe.py --input audio.wav --output-dir out --model small --language en
+# Transcribe with explicit language and device selection
+conda run -n video2pr python scripts/transcribe.py --input audio.wav --output-dir out --model small --language en --device auto
 
 # Convert an external transcript
 conda run -n video2pr python scripts/convert_transcript.py --input meeting.vtt --output-dir out
@@ -117,6 +118,7 @@ conda run -n video2pr python scripts/convert_transcript.py --input meeting.vtt -
 | `transcript.json` | Segments with timestamps, text, optional speaker/word data |
 | `transcript.srt` | SRT subtitles (Whisper-generated only) |
 | `plan.md` | Codebase-grounded implementation plan with prioritized tasks |
+| `progress.md` | Task completion tracker (persists across runs) |
 | `summary.md` | Structured meeting analysis with implementation plan summary |
 | `external_transcript_meta.json` | Source format info (external transcript only) |
 | `external_transcript_original.*` | Copy of original transcript (external only) |
