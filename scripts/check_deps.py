@@ -38,6 +38,8 @@ def parse_json_output(output: str):
             continue
         if line[end:].strip():
             continue
+        if not isinstance(value, (dict, list)):
+            continue
         return value
 
     for idx, char in enumerate(output):

@@ -97,6 +97,124 @@ def test_parse_json_output_accepts_banner_wrapped_json():
     }
 
 
+def test_parse_json_output_pretty_printed_windows_env_list():
+    """conda env list --json on Windows emits pretty-printed JSON; lines like
+    a bare quoted path are themselves valid JSON strings and must NOT be
+    returned as the parsed payload."""
+    output = (
+        "{\n"
+        '  "envs": [\n'
+        '    "C:\\\\Users\\\\foo\\\\miniconda3",\n'
+        '    "C:\\\\Users\\\\foo\\\\miniconda3\\\\envs\\\\video2pr"\n'
+        "  ],\n"
+        '  "envs_dirs": [\n'
+        '    "C:\\\\Users\\\\foo\\\\miniconda3\\\\envs"\n'
+        "  ]\n"
+        "}\n"
+    )
+    payload = check_deps.parse_json_output(output)
+    assert isinstance(payload, dict)
+    assert payload["envs"] == [
+        "C:\\Users\\foo\\miniconda3",
+        "C:\\Users\\foo\\miniconda3\\envs\\video2pr",
+    ]
+
+
+def test_parse_json_output_pretty_printed_unix_env_list():
+    output = (
+        "{\n"
+        '  "envs": [\n'
+        '    "/home/foo/miniconda3",\n'
+        '    "/home/foo/miniconda3/envs/video2pr"\n'
+        "  ]\n"
+        "}\n"
+    )
+    payload = check_deps.parse_json_output(output)
+    assert isinstance(payload, dict)
+    assert "/home/foo/miniconda3/envs/video2pr" in payload["envs"]
+
+
+def test_parse_json_output_pretty_printed_macos_env_list():
+    output = (
+        "{\n"
+        '  "envs": [\n'
+        '    "/Users/foo/miniconda3",\n'
+        '    "/Users/foo/miniconda3/envs/video2pr"\n'
+        "  ]\n"
+        "}\n"
+    )
+    payload = check_deps.parse_json_output(output)
+    assert isinstance(payload, dict)
+    assert "/Users/foo/miniconda3/envs/video2pr" in payload["envs"]
+
+
+def test_parse_json_output_returns_none_for_no_json():
+    assert check_deps.parse_json_output("nothing here\nor here\n") is None
+
+
+@pytest.mark.parametrize(
+    "envs_json",
+    [
+        # Linux
+        '"/home/foo/miniconda3",\n    "/home/foo/miniconda3/envs/video2pr"',
+        # macOS
+        '"/Users/foo/miniconda3",\n    "/Users/foo/miniconda3/envs/video2pr"',
+    ],
+)
+def test_env_exists_pretty_printed_json_posix(envs_json):
+    """Regression: pretty-printed `conda env list --json` must be parsed as a
+    dict so env_exists correctly detects the video2pr environment."""
+    stdout = "{\n" f'  "envs": [\n    {envs_json}\n  ]\n' "}\n"
+    with patch(
+        "check_deps.subprocess.run",
+        return_value=CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""),
+    ):
+        assert check_deps.env_exists("video2pr", "conda") is True
+
+
+def test_env_exists_pretty_printed_json_windows():
+    """Regression for the Windows-reported false negative: parse_json_output
+    used to return the bare quoted path string from a pretty-printed line,
+    causing env_exists to wrongly report the env missing.
+
+    Patches Path -> PureWindowsPath inside check_deps so basename extraction
+    works regardless of the host OS running the test."""
+    from pathlib import PureWindowsPath
+
+    stdout = (
+        "{\n"
+        '  "envs": [\n'
+        '    "C:\\\\Users\\\\foo\\\\miniconda3",\n'
+        '    "C:\\\\Users\\\\foo\\\\miniconda3\\\\envs\\\\video2pr"\n'
+        "  ]\n"
+        "}\n"
+    )
+    with (
+        patch(
+            "check_deps.subprocess.run",
+            return_value=CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""),
+        ),
+        patch("check_deps.Path", PureWindowsPath),
+    ):
+        assert check_deps.env_exists("video2pr", "conda") is True
+
+
+def test_env_exists_missing_env():
+    stdout = (
+        "{\n"
+        '  "envs": [\n'
+        '    "/home/foo/miniconda3",\n'
+        '    "/home/foo/miniconda3/envs/other"\n'
+        "  ]\n"
+        "}\n"
+    )
+    with patch(
+        "check_deps.subprocess.run",
+        return_value=CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""),
+    ):
+        assert check_deps.env_exists("video2pr", "conda") is False
+
+
 def test_check_deps_in_env_accepts_noisy_stdout():
     stdout = (
         "Preparing transaction...\n"
