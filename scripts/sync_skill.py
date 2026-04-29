@@ -110,22 +110,15 @@ def render(template: str, tokens: dict) -> str:
     for key, value in tokens.items():
         out = out.replace("{{" + key + "}}", value)
     if "{{" in out:
-        unresolved = [
-            line for line in out.splitlines() if "{{" in line
-        ][:3]
-        raise ValueError(
-            f"Unresolved placeholders after rendering: {unresolved}"
-        )
+        unresolved = [line for line in out.splitlines() if "{{" in line][:3]
+        raise ValueError(f"Unresolved placeholders after rendering: {unresolved}")
     return out
 
 
 def render_all() -> dict:
     """Render the template for every platform. Returns name → rendered text."""
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    return {
-        name: render(template, cfg["tokens"])
-        for name, cfg in PLATFORMS.items()
-    }
+    return {name: render(template, cfg["tokens"]) for name, cfg in PLATFORMS.items()}
 
 
 def main() -> None:

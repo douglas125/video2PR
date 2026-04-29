@@ -6,7 +6,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 GITHUB_API = "https://api.github.com/repos/{repo}/commits"
@@ -75,8 +75,9 @@ def check(config: dict) -> bool:
             continue
         latest_date = commits[0]["commit"]["committer"]["date"]
         if latest_date > installed_at:
-            print(f"UPDATE_AVAILABLE: New changes since {installed_at}. "
-                  f"Run with --apply to update.")
+            print(
+                f"UPDATE_AVAILABLE: New changes since {installed_at}. Run with --apply to update."
+            )
             return True
 
     print("UP_TO_DATE")
@@ -132,7 +133,7 @@ def apply_update(config: dict, script_dir: Path) -> None:
             print(f"  Warning: could not download SKILL.md: {e}", file=sys.stderr)
 
     # Update installed_at in config
-    config["installed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    config["installed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     config_path = base_dir / ".video2pr_install.json"
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
@@ -146,8 +147,7 @@ def apply_update(config: dict, script_dir: Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Check for video2pr updates")
-    parser.add_argument("--apply", action="store_true",
-                        help="Download and apply available updates")
+    parser.add_argument("--apply", action="store_true", help="Download and apply available updates")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent

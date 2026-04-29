@@ -10,7 +10,6 @@ import platform
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -88,11 +87,13 @@ def _check_ctranslate2_cuda():
     """
     try:
         import ctranslate2
+
         supported = ctranslate2.get_supported_compute_types("cuda")
         return True, len(supported) > 0
     except (ImportError, RuntimeError, Exception):
         try:
             import ctranslate2
+
             return True, False
         except ImportError:
             return False, False

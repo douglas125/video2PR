@@ -5,7 +5,6 @@ import sys
 import urllib.error
 
 import pytest
-
 from conftest import import_script
 
 check_update = import_script("check_update.py")
@@ -244,9 +243,8 @@ def test_main_network_error(tmp_path, monkeypatch, capsys):
     (skill_dir / ".video2pr_install.json").write_text(json.dumps(config))
 
     monkeypatch.setattr(sys, "argv", ["check_update.py"])
-    monkeypatch.setattr(
-        check_update, "load_config", lambda _: config
-    )
+    monkeypatch.setattr(check_update, "load_config", lambda _: config)
+
     def raise_url_error(url):
         raise urllib.error.URLError("Network down")
 

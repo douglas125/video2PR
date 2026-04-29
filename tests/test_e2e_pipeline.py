@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from conftest import import_script
 
 extract_audio = import_script("extract_audio.py")
@@ -28,6 +27,7 @@ pytestmark = pytest.mark.skipif(
 def _have_faster_whisper() -> bool:
     try:
         import faster_whisper  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -37,15 +37,23 @@ def _synthesize_video(path: Path, duration_s: int = 3) -> None:
     """Create a tiny silent MP4 with a black frame track for testing."""
     cmd = [
         "ffmpeg",
-        "-f", "lavfi",
-        "-i", f"color=c=black:s=160x120:d={duration_s}",
-        "-f", "lavfi",
-        "-i", "anullsrc=r=16000:cl=mono",
-        "-t", str(duration_s),
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=black:s=160x120:d={duration_s}",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=16000:cl=mono",
+        "-t",
+        str(duration_s),
         "-shortest",
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-c:a", "aac",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-c:a",
+        "aac",
         "-y",
         str(path),
     ]

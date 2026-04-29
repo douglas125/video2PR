@@ -13,7 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ENV_NAME = "video2pr"
 CLI_TOOLS = ["ffmpeg", "ffprobe"]
 PYTHON_IMPORTS = {"faster-whisper": "faster_whisper", "python-docx": "docx"}
@@ -135,7 +134,9 @@ def check_deps_in_env(conda_path="conda"):
             f"except ImportError:\n    results[{name!r}] = False"
         )
 
-    script = "import shutil, json\nresults = {}\n" + "\n".join(checks) + "\nprint(json.dumps(results))"
+    script = (
+        "import shutil, json\nresults = {}\n" + "\n".join(checks) + "\nprint(json.dumps(results))"
+    )
 
     result = subprocess.run(
         [conda_path, "run", "-n", ENV_NAME, "python", "-c", script],
@@ -145,13 +146,13 @@ def check_deps_in_env(conda_path="conda"):
     if result.returncode != 0:
         # Fallback: report everything as missing
         all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
-        return {name: False for name in all_names}
+        return dict.fromkeys(all_names, False)
     payload = parse_json_output(result.stdout)
     if isinstance(payload, dict):
         return payload
 
     all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
-    return {name: False for name in all_names}
+    return dict.fromkeys(all_names, False)
 
 
 def main():
@@ -215,7 +216,7 @@ def main():
                 elif gpu_name and not available:
                     print(f"  GPU: {gpu_name} detected, CTranslate2 is CPU-only")
                     if install_cmd:
-                        print(f"  To enable GPU acceleration (~5-20x faster transcription):")
+                        print("  To enable GPU acceleration (~5-20x faster transcription):")
                         print(f"    {install_cmd}")
                 else:
                     print("  GPU: CPU only")

@@ -70,9 +70,7 @@ def parse_sbv(content: str) -> list[dict]:
             continue
 
         # First line: timestamp range
-        ts_match = re.match(
-            r"(\d+:\d+:\d+\.\d+),(\d+:\d+:\d+\.\d+)", lines[0]
-        )
+        ts_match = re.match(r"(\d+:\d+:\d+\.\d+),(\d+:\d+:\d+\.\d+)", lines[0])
         if not ts_match:
             continue
 
@@ -87,13 +85,15 @@ def parse_sbv(content: str) -> list[dict]:
             speaker = speaker_match.group(1).strip()
             text = speaker_match.group(2).strip()
 
-        segments.append({
-            "start": start,
-            "end": end,
-            "text": text,
-            "speaker": speaker,
-            "words": [],
-        })
+        segments.append(
+            {
+                "start": start,
+                "end": end,
+                "text": text,
+                "speaker": speaker,
+                "words": [],
+            }
+        )
 
     return segments
 
@@ -130,15 +130,9 @@ def parse_teams_vtt(content: str) -> list[dict]:
         ts_line = None
         text_lines = []
         for line in lines:
-            ts_match = re.match(
-                r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line
-            )
-            if not ts_match and re.match(
-                r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line
-            ):
-                ts_match = re.match(
-                    r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line
-                )
+            ts_match = re.match(r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line)
+            if not ts_match and re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line):
+                ts_match = re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line)
             if ts_match:
                 ts_line = ts_match
             elif ts_line is not None:
@@ -158,13 +152,15 @@ def parse_teams_vtt(content: str) -> list[dict]:
             speaker = v_match.group(1).strip()
             text = v_match.group(2).strip()
 
-        segments.append({
-            "start": start,
-            "end": end,
-            "text": text,
-            "speaker": speaker,
-            "words": [],
-        })
+        segments.append(
+            {
+                "start": start,
+                "end": end,
+                "text": text,
+                "speaker": speaker,
+                "words": [],
+            }
+        )
 
     return segments
 
@@ -187,15 +183,9 @@ def parse_zoom_vtt(content: str) -> list[dict]:
         ts_line = None
         text_lines = []
         for line in lines:
-            ts_match = re.match(
-                r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line
-            )
-            if not ts_match and re.match(
-                r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line
-            ):
-                ts_match = re.match(
-                    r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line
-                )
+            ts_match = re.match(r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line)
+            if not ts_match and re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line):
+                ts_match = re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line)
             if ts_match:
                 ts_line = ts_match
             elif ts_line is not None:
@@ -222,13 +212,15 @@ def parse_zoom_vtt(content: str) -> list[dict]:
                 speaker = candidate_speaker
                 text = speaker_match.group(2).strip()
 
-        segments.append({
-            "start": start,
-            "end": end,
-            "text": text,
-            "speaker": speaker,
-            "words": [],
-        })
+        segments.append(
+            {
+                "start": start,
+                "end": end,
+                "text": text,
+                "speaker": speaker,
+                "words": [],
+            }
+        )
 
     return segments
 
@@ -261,13 +253,15 @@ def parse_zoom_txt(content: str) -> list[dict]:
         )
 
         if text:
-            segments.append({
-                "start": float(start),
-                "end": float(end),
-                "text": text,
-                "speaker": speaker,
-                "words": [],
-            })
+            segments.append(
+                {
+                    "start": float(start),
+                    "end": float(end),
+                    "text": text,
+                    "speaker": speaker,
+                    "words": [],
+                }
+            )
 
     return segments
 
@@ -300,13 +294,15 @@ def parse_google_txt(content: str) -> list[dict]:
         )
 
         if text:
-            segments.append({
-                "start": float(start),
-                "end": float(end),
-                "text": text,
-                "speaker": speaker,
-                "words": [],
-            })
+            segments.append(
+                {
+                    "start": float(start),
+                    "end": float(end),
+                    "text": text,
+                    "speaker": speaker,
+                    "words": [],
+                }
+            )
 
     return segments
 
@@ -332,18 +328,20 @@ def parse_teams_docx(input_path: Path) -> list[dict]:
         if header_match:
             # Save previous segment
             if current_texts:
-                segments.append({
-                    "start": current_start,
-                    "end": current_start + 30,  # placeholder until next segment
-                    "text": " ".join(current_texts),
-                    "speaker": current_speaker,
-                    "words": [],
-                })
+                segments.append(
+                    {
+                        "start": current_start,
+                        "end": current_start + 30,  # placeholder until next segment
+                        "text": " ".join(current_texts),
+                        "speaker": current_speaker,
+                        "words": [],
+                    }
+                )
 
             current_speaker = header_match.group(1).strip()
             ts_parts = header_match.group(2).split(":")
-            current_start = (
-                float(int(ts_parts[0]) * 3600 + int(ts_parts[1]) * 60 + int(ts_parts[2]))
+            current_start = float(
+                int(ts_parts[0]) * 3600 + int(ts_parts[1]) * 60 + int(ts_parts[2])
             )
             current_texts = []
         else:
@@ -351,13 +349,15 @@ def parse_teams_docx(input_path: Path) -> list[dict]:
 
     # Save final segment
     if current_texts:
-        segments.append({
-            "start": current_start,
-            "end": current_start + 30,
-            "text": " ".join(current_texts),
-            "speaker": current_speaker,
-            "words": [],
-        })
+        segments.append(
+            {
+                "start": current_start,
+                "end": current_start + 30,
+                "text": " ".join(current_texts),
+                "speaker": current_speaker,
+                "words": [],
+            }
+        )
 
     # Fix end times: each segment ends when the next begins
     for i in range(len(segments) - 1):
@@ -449,7 +449,16 @@ def main():
     parser.add_argument(
         "--format",
         default="auto",
-        choices=["auto", "sbv", "vtt", "teams_vtt", "zoom_vtt", "zoom_txt", "google_txt", "teams_docx"],
+        choices=[
+            "auto",
+            "sbv",
+            "vtt",
+            "teams_vtt",
+            "zoom_vtt",
+            "zoom_txt",
+            "google_txt",
+            "teams_docx",
+        ],
         help="Transcript format (default: auto-detect)",
     )
     args = parser.parse_args()

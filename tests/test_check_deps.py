@@ -24,7 +24,9 @@ class TestFindConda:
     def test_which_finds_conda_on_windows(self):
         """When shutil.which finds conda on Windows, return it without fallback."""
         with (
-            patch("check_deps.shutil.which", return_value=r"C:\Users\me\miniconda3\condabin\conda.bat"),
+            patch(
+                "check_deps.shutil.which", return_value=r"C:\Users\me\miniconda3\condabin\conda.bat"
+            ),
             patch("check_deps.platform.system", return_value="Windows"),
         ):
             result = check_deps.find_conda()
@@ -164,7 +166,7 @@ def test_parse_json_output_returns_none_for_no_json():
 def test_env_exists_pretty_printed_json_posix(envs_json):
     """Regression: pretty-printed `conda env list --json` must be parsed as a
     dict so env_exists correctly detects the video2pr environment."""
-    stdout = "{\n" f'  "envs": [\n    {envs_json}\n  ]\n' "}\n"
+    stdout = f'{{\n  "envs": [\n    {envs_json}\n  ]\n}}\n'
     with patch(
         "check_deps.subprocess.run",
         return_value=CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""),
@@ -269,9 +271,7 @@ def test_main_parses_gpu_json_with_banner(capsys):
         patch("check_deps.check_deps_in_env", return_value=deps),
         patch(
             "check_deps.subprocess.run",
-            return_value=CompletedProcess(
-                args=[], returncode=0, stdout=gpu_stdout, stderr=""
-            ),
+            return_value=CompletedProcess(args=[], returncode=0, stdout=gpu_stdout, stderr=""),
         ),
     ):
         check_deps.main()

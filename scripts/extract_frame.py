@@ -37,7 +37,9 @@ def main():
     parser = argparse.ArgumentParser(description="Extract a single frame from video")
     parser.add_argument("--input", required=True, help="Path to input video file")
     parser.add_argument("--output-dir", required=True, help="Output directory for frames")
-    parser.add_argument("--timestamp", required=True, help="Timestamp (HH:MM:SS, MM:SS, or seconds)")
+    parser.add_argument(
+        "--timestamp", required=True, help="Timestamp (HH:MM:SS, MM:SS, or seconds)"
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input).resolve()
@@ -61,10 +63,14 @@ def main():
     result = subprocess.run(
         [
             "ffmpeg",
-            "-ss", ts,
-            "-i", str(input_path),
-            "-vframes", "1",
-            "-q:v", "2",
+            "-ss",
+            ts,
+            "-i",
+            str(input_path),
+            "-vframes",
+            "1",
+            "-q:v",
+            "2",
             "-y",
             str(output_path),
         ],

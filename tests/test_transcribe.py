@@ -3,7 +3,6 @@
 import json
 
 import pytest
-
 from conftest import import_script
 
 tr = import_script("transcribe.py")

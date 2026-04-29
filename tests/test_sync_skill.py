@@ -3,7 +3,6 @@
 import sys
 
 import pytest
-
 from conftest import import_script
 
 sync_skill = import_script("sync_skill.py")
@@ -51,8 +50,8 @@ def test_copilot_render_uses_copilot_tools():
 
 def test_check_mode_passes_when_in_sync():
     """The committed copies should match the rendered template."""
-    import io
     import contextlib
+    import io
 
     saved_argv = sys.argv
     sys.argv = ["sync_skill.py", "--check"]

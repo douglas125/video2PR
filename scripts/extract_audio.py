@@ -13,8 +13,10 @@ def get_metadata(input_path: Path) -> dict:
     result = subprocess.run(
         [
             "ffprobe",
-            "-v", "quiet",
-            "-print_format", "json",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
             str(input_path),
@@ -34,11 +36,15 @@ def extract_audio(input_path: Path, output_dir: Path) -> Path:
     result = subprocess.run(
         [
             "ffmpeg",
-            "-i", str(input_path),
+            "-i",
+            str(input_path),
             "-vn",
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",
-            "-ac", "1",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             "-y",
             str(output_path),
         ],
