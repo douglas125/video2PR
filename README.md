@@ -122,6 +122,63 @@ conda run -n video2pr python scripts/transcribe.py --input audio.wav --output-di
 conda run -n video2pr python scripts/convert_transcript.py --input meeting.vtt --output-dir out
 ```
 
+## Troubleshooting
+
+<details>
+<summary><code>conda: command not found</code></summary>
+
+The skill runs everything via `conda run -n video2pr`. If the assistant reports `conda` is missing, install Miniconda or Anaconda and ensure it's on your `PATH`. On Windows + Git Bash, the dependency check (`scripts/check_deps.py`) also probes common install locations under `%USERPROFILE%\miniconda3\` and `C:\ProgramData\` automatically — so a fresh install should usually be picked up without re-launching the shell.
+
+</details>
+
+<details>
+<summary><code>ffmpeg: command not found</code> on Windows</summary>
+
+`ffmpeg` is provided by the `video2pr` conda env, not your system. Run commands via `conda run -n video2pr ...` or activate the env. If `conda env create -f environment.yml` succeeded but ffmpeg is still missing, your conda install may have failed to write to PATH — re-create the env or run `conda activate video2pr && which ffmpeg` to confirm.
+
+</details>
+
+<details>
+<summary>Wrong language was auto-detected</summary>
+
+The skill detects language with the `base` model and reports a confidence score. If confidence is below 80%, it asks you to confirm before transcribing. If you got past that prompt and the result is wrong, re-run with an explicit language code:
+
+```bash
+conda run -n video2pr python scripts/transcribe.py \
+  --input audio.wav --output-dir out --model small --language pt
+```
+
+Use the ISO 639-1 code (`en`, `pt`, `es`, `fr`, `de`, `ja`, ...). The skill will then re-transcribe end-to-end.
+
+</details>
+
+<details>
+<summary>Transcription appears to hang</summary>
+
+On CPU, the `small` model runs at roughly 1–2× realtime — a 60-minute meeting can take 30–60 minutes. The progress reporter prints completed segments as they're produced; if you see segment counts increasing, it's working. To go faster, install GPU acceleration (see next section) or switch to `--model base` for a quick draft.
+
+</details>
+
+<details>
+<summary>"GPU detected but CTranslate2 is CPU-only"</summary>
+
+This means `nvidia-smi` finds your card but the installed CTranslate2 wheel doesn't include CUDA support (a common state on fresh installs). The skill prompts you to fix it during Phase 1. The manual command is:
+
+```bash
+conda run -n video2pr pip install --upgrade ctranslate2
+```
+
+After installing, re-run `python scripts/check_gpu.py` to confirm. If the GPU still isn't picked up, your NVIDIA driver may be older than what the current CTranslate2 wheel requires — check the [CTranslate2 release notes](https://github.com/OpenNMT/CTranslate2/releases) for the minimum driver version.
+
+</details>
+
+<details>
+<summary>I edited a <code>SKILL.md</code> and my changes got overwritten</summary>
+
+The three `SKILL.md` files under `.claude/`, `.agents/`, and `.github/` are generated from `skill/SKILL.md` (see "Editing the skill prompt" above). Edit the canonical source and run `python scripts/sync_skill.py`.
+
+</details>
+
 ## Output Files
 
 | File | Description |
