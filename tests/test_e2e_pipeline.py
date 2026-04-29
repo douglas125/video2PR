@@ -6,6 +6,7 @@ transcription is accurate — silent audio yields zero segments. It asserts the
 plumbing produces well-formed output files matching the documented schema.
 """
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -22,15 +23,6 @@ pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg/ffprobe not installed",
 )
-
-
-def _have_faster_whisper() -> bool:
-    try:
-        import faster_whisper  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
 
 
 def _synthesize_video(path: Path, duration_s: int = 3) -> None:
@@ -79,7 +71,10 @@ def test_extract_audio_pipeline(tmp_path):
     assert "streams" in metadata
 
 
-@pytest.mark.skipif(not _have_faster_whisper(), reason="faster-whisper not installed")
+@pytest.mark.skipif(
+    importlib.util.find_spec("faster_whisper") is None,
+    reason="faster-whisper not installed",
+)
 def test_full_pipeline_produces_valid_transcript_json(tmp_path):
     """End-to-end: video → audio → transcript.json with the documented schema."""
     video = tmp_path / "test.mp4"

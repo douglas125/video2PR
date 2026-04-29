@@ -8,6 +8,11 @@ from conftest import import_script
 sync_skill = import_script("sync_skill.py")
 
 
+@pytest.fixture(scope="module")
+def rendered():
+    return sync_skill.render_all()
+
+
 def test_render_substitutes_all_tokens():
     template = "{{FRONTMATTER}}\n\n{{AGENT_ATTRIBUTION}}done."
     out = sync_skill.render(
@@ -22,8 +27,7 @@ def test_render_raises_on_unresolved_token():
         sync_skill.render("{{MISSING}}", {})
 
 
-def test_claude_render_contains_plan_mode_terms():
-    rendered = sync_skill.render_all()
+def test_claude_render_contains_plan_mode_terms(rendered):
     claude = rendered["claude"]
     assert "EnterPlanMode" in claude
     assert "ExitPlanMode" in claude
@@ -31,8 +35,7 @@ def test_claude_render_contains_plan_mode_terms():
     assert "Glob and Read" in claude
 
 
-def test_codex_render_strips_claude_specifics():
-    rendered = sync_skill.render_all()
+def test_codex_render_strips_claude_specifics(rendered):
     codex = rendered["codex"]
     assert "EnterPlanMode" not in codex
     assert "ExitPlanMode" not in codex
@@ -41,30 +44,19 @@ def test_codex_render_strips_claude_specifics():
     assert "file listing and content search tools" in codex
 
 
-def test_copilot_render_uses_copilot_tools():
-    rendered = sync_skill.render_all()
+def test_copilot_render_uses_copilot_tools(rendered):
     copilot = rendered["copilot"]
     assert "EnterPlanMode" not in copilot
     assert "allowed-tools: Bash Read Write Glob" in copilot
 
 
-def test_check_mode_passes_when_in_sync():
+def test_check_mode_passes_when_in_sync(monkeypatch, capsys):
     """The committed copies should match the rendered template."""
-    import contextlib
-    import io
-
-    saved_argv = sys.argv
-    sys.argv = ["sync_skill.py", "--check"]
-    try:
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            sync_skill.main()
-        assert "in sync" in buf.getvalue()
-    finally:
-        sys.argv = saved_argv
+    monkeypatch.setattr(sys, "argv", ["sync_skill.py", "--check"])
+    sync_skill.main()
+    assert "in sync" in capsys.readouterr().out
 
 
-def test_all_three_outputs_have_distinct_frontmatter():
-    rendered = sync_skill.render_all()
+def test_all_three_outputs_have_distinct_frontmatter(rendered):
     fronts = {name: out.split("---\n", 2)[1] for name, out in rendered.items()}
     assert len({fronts["claude"], fronts["codex"], fronts["copilot"]}) == 3

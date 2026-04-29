@@ -9,6 +9,7 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = REPO_ROOT / "skill" / "SKILL.md"
@@ -33,7 +34,9 @@ allowed-tools:
   - ExitPlanMode
 ---"""
 
-CODEX_FRONTMATTER = f"""---
+
+def _generic_frontmatter(allowed_tools: str) -> str:
+    return f"""---
 name: video2pr
 {SHARED_DESCRIPTION}
 license: MIT
@@ -41,22 +44,11 @@ compatibility: "Requires conda, ffmpeg, and Python 3.13+. Install with: conda en
 metadata:
   author: douglas125
   version: "1.0"
-allowed-tools: shell read_file apply_patch list_dir grep_files
+allowed-tools: {allowed_tools}
 ---"""
 
-COPILOT_FRONTMATTER = f"""---
-name: video2pr
-{SHARED_DESCRIPTION}
-license: MIT
-compatibility: "Requires conda, ffmpeg, and Python 3.13+. Install with: conda env create -f environment.yml"
-metadata:
-  author: douglas125
-  version: "1.0"
-allowed-tools: Bash Read Write Glob
----"""
 
 CLAUDE_TOKENS = {
-    "FRONTMATTER": CLAUDE_FRONTMATTER,
     "AGENT_ATTRIBUTION": "by Claude ",
     "CODEBASE_SEARCH_INSTRUCTION": (
         "use Glob and Read to search the codebase **within the repository root**"
@@ -88,19 +80,31 @@ GENERIC_TOKENS = {
     ),
 }
 
-PLATFORMS = {
-    "claude": {
-        "out_path": REPO_ROOT / ".claude" / "skills" / "video2pr" / "SKILL.md",
-        "tokens": CLAUDE_TOKENS,
-    },
-    "codex": {
-        "out_path": REPO_ROOT / ".agents" / "skills" / "video2pr" / "SKILL.md",
-        "tokens": {**GENERIC_TOKENS, "FRONTMATTER": CODEX_FRONTMATTER},
-    },
-    "copilot": {
-        "out_path": REPO_ROOT / ".github" / "skills" / "video2pr" / "SKILL.md",
-        "tokens": {**GENERIC_TOKENS, "FRONTMATTER": COPILOT_FRONTMATTER},
-    },
+
+class Platform(NamedTuple):
+    out_path: Path
+    tokens: dict
+
+
+PLATFORMS: dict[str, Platform] = {
+    "claude": Platform(
+        out_path=REPO_ROOT / ".claude" / "skills" / "video2pr" / "SKILL.md",
+        tokens={**CLAUDE_TOKENS, "FRONTMATTER": CLAUDE_FRONTMATTER},
+    ),
+    "codex": Platform(
+        out_path=REPO_ROOT / ".agents" / "skills" / "video2pr" / "SKILL.md",
+        tokens={
+            **GENERIC_TOKENS,
+            "FRONTMATTER": _generic_frontmatter("shell read_file apply_patch list_dir grep_files"),
+        },
+    ),
+    "copilot": Platform(
+        out_path=REPO_ROOT / ".github" / "skills" / "video2pr" / "SKILL.md",
+        tokens={
+            **GENERIC_TOKENS,
+            "FRONTMATTER": _generic_frontmatter("Bash Read Write Glob"),
+        },
+    ),
 }
 
 
@@ -115,10 +119,10 @@ def render(template: str, tokens: dict) -> str:
     return out
 
 
-def render_all() -> dict:
+def render_all() -> dict[str, str]:
     """Render the template for every platform. Returns name → rendered text."""
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    return {name: render(template, cfg["tokens"]) for name, cfg in PLATFORMS.items()}
+    return {name: render(template, plat.tokens) for name, plat in PLATFORMS.items()}
 
 
 def main() -> None:
@@ -133,18 +137,17 @@ def main() -> None:
     rendered = render_all()
     drift = []
 
-    for name, cfg in PLATFORMS.items():
-        out_path = cfg["out_path"]
+    for name, plat in PLATFORMS.items():
         new_text = rendered[name]
 
         if args.check:
-            current = out_path.read_text(encoding="utf-8") if out_path.exists() else ""
+            current = plat.out_path.read_text(encoding="utf-8") if plat.out_path.exists() else ""
             if current != new_text:
-                drift.append(out_path.relative_to(REPO_ROOT))
+                drift.append(plat.out_path.relative_to(REPO_ROOT))
         else:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(new_text, encoding="utf-8")
-            print(f"  wrote {out_path.relative_to(REPO_ROOT)}")
+            plat.out_path.parent.mkdir(parents=True, exist_ok=True)
+            plat.out_path.write_text(new_text, encoding="utf-8")
+            print(f"  wrote {plat.out_path.relative_to(REPO_ROOT)}")
 
     if args.check:
         if drift:

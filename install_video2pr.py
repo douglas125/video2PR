@@ -12,7 +12,6 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Source repo root (where this script lives)
 REPO_ROOT = Path(__file__).resolve().parent
 
 SCRIPT_NAMES = [
