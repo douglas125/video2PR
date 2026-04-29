@@ -9,10 +9,9 @@ import argparse
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-# Source repo root (where this script lives)
 REPO_ROOT = Path(__file__).resolve().parent
 
 SCRIPT_NAMES = [
@@ -68,7 +67,7 @@ def check_source_files() -> list[str]:
             errors.append(f"Missing script: scripts/{name}")
     if not (REPO_ROOT / "environment.yml").exists():
         errors.append("Missing: environment.yml")
-    for assistant, cfg in ASSISTANTS.items():
+    for cfg in ASSISTANTS.values():
         skill_md = REPO_ROOT / cfg["skill_md"]
         if not skill_md.exists():
             errors.append(f"Missing: {cfg['skill_md']}")
@@ -157,7 +156,7 @@ def install_assistant(target: Path, name: str, dry_run: bool) -> list[str]:
         "repo": "douglas125/video2PR",
         "branch": "main",
         "skill_dir": skill_dir,
-        "installed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "installed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "assistants_installed": [name],
     }
     config_path = dest / ".video2pr_install.json"
@@ -183,16 +182,18 @@ def main():
             "  python install_video2pr.py /path/to/project --dry-run\n"
         ),
     )
-    parser.add_argument("target_path", type=Path,
-                        help="Target project root directory")
-    parser.add_argument("--assistants", nargs="+",
-                        choices=["claude-code", "codex", "copilot"],
-                        default=["claude-code", "codex", "copilot"],
-                        help="Which assistants to install for (default: all)")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite existing skill folders")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be installed without writing")
+    parser.add_argument("target_path", type=Path, help="Target project root directory")
+    parser.add_argument(
+        "--assistants",
+        nargs="+",
+        choices=["claude-code", "codex", "copilot"],
+        default=["claude-code", "codex", "copilot"],
+        help="Which assistants to install for (default: all)",
+    )
+    parser.add_argument("--force", action="store_true", help="Overwrite existing skill folders")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be installed without writing"
+    )
     args = parser.parse_args()
 
     target = args.target_path.resolve()
@@ -205,8 +206,9 @@ def main():
     # Validate source files
     errors = check_source_files()
     if errors:
-        print("Error: Source files missing. Are you running from the video2PR repo?",
-              file=sys.stderr)
+        print(
+            "Error: Source files missing. Are you running from the video2PR repo?", file=sys.stderr
+        )
         for e in errors:
             print(f"  {e}", file=sys.stderr)
         sys.exit(1)
@@ -215,8 +217,9 @@ def main():
     if not args.force and not args.dry_run:
         conflicts = get_conflicts(target, args.assistants)
         if conflicts:
-            print("Error: Existing skill folders found (use --force to overwrite):",
-                  file=sys.stderr)
+            print(
+                "Error: Existing skill folders found (use --force to overwrite):", file=sys.stderr
+            )
             for c in conflicts:
                 print(f"  {c}", file=sys.stderr)
             sys.exit(1)
@@ -255,9 +258,7 @@ def main():
 
         # Copilot root file
         if name == "copilot":
-            summary_lines.append(
-                f"  {'':13}.github/agents/video2pr.agent.md"
-            )
+            summary_lines.append(f"  {'':13}.github/agents/video2pr.agent.md")
 
     if not args.dry_run:
         # Determine which env path to show (use first assistant's)
@@ -267,9 +268,9 @@ def main():
         print(f"\nvideo2pr installed to {target}\n")
         for line in summary_lines:
             print(line)
-        print(f"\n  Next steps:")
+        print("\n  Next steps:")
         print(f"    1. conda env create -f {env_path}")
-        print(f"    2. Use /video2pr <video-path> in your coding assistant")
+        print("    2. Use /video2pr <video-path> in your coding assistant")
 
 
 if __name__ == "__main__":

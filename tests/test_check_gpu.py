@@ -17,8 +17,7 @@ def _fake_nvidia_smi(gpu_name="NVIDIA RTX 3080", driver="535.129.03", cuda_ver="
     """Return a side_effect function for monkeypatching subprocess.run."""
     query_stdout = f"{gpu_name}, {driver}\n"
     header_stdout = (
-        f"| NVIDIA-SMI {driver}   Driver Version: {driver}"
-        f"   CUDA Version: {cuda_ver}  |\n"
+        f"| NVIDIA-SMI {driver}   Driver Version: {driver}   CUDA Version: {cuda_ver}  |\n"
     )
 
     def fake_run(cmd, **kwargs):
@@ -45,7 +44,9 @@ def test_nvidia_cuda_working(monkeypatch):
 
     # Mock ctranslate2 with CUDA support
     fake_ct2 = types.ModuleType("ctranslate2")
-    fake_ct2.get_supported_compute_types = lambda device: ["float16", "int8"] if device == "cuda" else ["int8"]
+    fake_ct2.get_supported_compute_types = lambda device: (
+        ["float16", "int8"] if device == "cuda" else ["int8"]
+    )
     monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
 
     result = gpu.check_gpu()
@@ -163,9 +164,7 @@ def test_windows_nvidia_smi_path(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda x: None)
 
     # Monkeypatch the helpers to simulate Windows detection results
-    monkeypatch.setattr(
-        gpu, "_run_nvidia_smi_query", lambda: ("NVIDIA RTX 4090", "545.0")
-    )
+    monkeypatch.setattr(gpu, "_run_nvidia_smi_query", lambda: ("NVIDIA RTX 4090", "545.0"))
     monkeypatch.setattr(gpu, "_parse_cuda_version", lambda: "12.4")
 
     # CTranslate2 without CUDA

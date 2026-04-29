@@ -3,7 +3,6 @@
 import json
 
 import pytest
-
 from conftest import import_script
 
 ct = import_script("convert_transcript.py")
@@ -62,10 +61,7 @@ def test_parse_sbv_empty():
 
 
 def test_parse_vtt_with_v_tag():
-    content = (
-        "00:00:01.000 --> 00:00:05.000\n"
-        "<v Speaker>Some text</v>"
-    )
+    content = "00:00:01.000 --> 00:00:05.000\n<v Speaker>Some text</v>"
     segments = ct.parse_teams_vtt(content)
     assert len(segments) == 1
     assert segments[0]["speaker"] == "Speaker"
@@ -73,11 +69,7 @@ def test_parse_vtt_with_v_tag():
 
 
 def test_parse_vtt_strips_header():
-    content = (
-        "WEBVTT\n\n"
-        "00:00:01.000 --> 00:00:05.000\n"
-        "Hello world"
-    )
+    content = "WEBVTT\n\n00:00:01.000 --> 00:00:05.000\nHello world"
     segments = ct.parse_teams_vtt(content)
     assert len(segments) == 1
     assert segments[0]["text"] == "Hello world"
@@ -87,12 +79,7 @@ def test_parse_vtt_strips_header():
 
 
 def test_parse_google_txt_two_speakers():
-    content = (
-        "Alice (0:00:10)\n"
-        "First message\n"
-        "Bob (0:00:30)\n"
-        "Second message"
-    )
+    content = "Alice (0:00:10)\nFirst message\nBob (0:00:30)\nSecond message"
     segments = ct.parse_google_txt(content)
     assert len(segments) == 2
     assert segments[0]["speaker"] == "Alice"
@@ -139,9 +126,7 @@ def test_detect_format_teams_vtt(tmp_path):
 def test_detect_format_zoom_vtt(tmp_path):
     vtt = tmp_path / "zoom.vtt"
     vtt.write_text(
-        "WEBVTT\n\n"
-        "1\n00:00:00.000 --> 00:00:04.560\n"
-        "Douglas Castilho: Good morning everyone."
+        "WEBVTT\n\n1\n00:00:00.000 --> 00:00:04.560\nDouglas Castilho: Good morning everyone."
     )
     assert ct.detect_format(vtt) == "zoom_vtt"
 
@@ -262,11 +247,7 @@ def test_parse_zoom_vtt_no_speakers():
 
 def test_parse_zoom_vtt_avoids_label_false_positive():
     """Text like 'Note: something' should not be treated as a speaker."""
-    content = (
-        "WEBVTT\n\n"
-        "1\n00:00:01.000 --> 00:00:05.000\n"
-        "note: this is a note, not a speaker"
-    )
+    content = "WEBVTT\n\n1\n00:00:01.000 --> 00:00:05.000\nnote: this is a note, not a speaker"
     segments = ct.parse_zoom_vtt(content)
     assert len(segments) == 1
     assert segments[0]["speaker"] is None

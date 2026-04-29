@@ -66,7 +66,9 @@ def load_model(model_name: str, device: str = "auto", compute_type: str = "defau
     if compute_type != "default":
         resolved_compute = compute_type
 
-    print(f"Loading Whisper model '{model_name}' (device={resolved_device}, compute={resolved_compute})...")
+    print(
+        f"Loading Whisper model '{model_name}' (device={resolved_device}, compute={resolved_compute})..."
+    )
     return WhisperModel(model_name, device=resolved_device, compute_type=resolved_compute)
 
 
@@ -144,18 +146,20 @@ def run_transcription(
     segments = []
     for seg in segments_gen:
         words = []
-        for w in (seg.words or []):
+        for w in seg.words or []:
             word_entry = {"word": w.word, "start": w.start, "end": w.end}
             if w.probability is not None:
                 word_entry["probability"] = w.probability
             words.append(word_entry)
 
-        segments.append({
-            "start": seg.start,
-            "end": seg.end,
-            "text": seg.text.strip(),
-            "words": words,
-        })
+        segments.append(
+            {
+                "start": seg.start,
+                "end": seg.end,
+                "text": seg.text.strip(),
+                "words": words,
+            }
+        )
 
     # Write output files
     write_transcript_json(output_dir / "transcript.json", segments)
@@ -182,13 +186,17 @@ def transcribe(
         print(f"Audio duration: {duration:.1f}s ({duration / 60:.1f} min)")
 
     start_time = time.time()
-    result = run_transcription(audio_path, output_dir, model, language=language, vad_filter=vad_filter)
+    result = run_transcription(
+        audio_path, output_dir, model, language=language, vad_filter=vad_filter
+    )
     elapsed = time.time() - start_time
 
     n_segments = len(result["segments"])
     if duration and elapsed > 0:
         ratio = duration / elapsed
-        print(f"Transcription: {n_segments} segments in {format_elapsed(elapsed)} ({ratio:.1f}x realtime)")
+        print(
+            f"Transcription: {n_segments} segments in {format_elapsed(elapsed)} ({ratio:.1f}x realtime)"
+        )
     else:
         print(f"Transcription: {n_segments} segments in {format_elapsed(elapsed)}")
 
@@ -196,12 +204,15 @@ def transcribe(
 def _get_audio_duration(audio_path: Path) -> float | None:
     """Get audio duration in seconds using ffprobe. Returns None on failure."""
     import subprocess
+
     try:
         result = subprocess.run(
             [
                 "ffprobe",
-                "-v", "quiet",
-                "-print_format", "json",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
                 "-show_format",
                 str(audio_path),
             ],

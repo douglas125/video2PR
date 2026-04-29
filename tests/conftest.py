@@ -11,10 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def import_script(name: str):
     """Import a script by file path, avoiding sys.path pollution."""
-    if "/" in name:
-        script_path = REPO_ROOT / name
-    else:
-        script_path = REPO_ROOT / "scripts" / name
+    script_path = REPO_ROOT / name if "/" in name else REPO_ROOT / "scripts" / name
     spec = importlib.util.spec_from_file_location(
         name.replace("/", ".").removesuffix(".py"), script_path
     )

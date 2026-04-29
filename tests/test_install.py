@@ -4,7 +4,6 @@ import json
 import sys
 
 import pytest
-
 from conftest import import_script
 
 install = import_script("./install_video2pr.py")
@@ -14,17 +13,13 @@ install = import_script("./install_video2pr.py")
 
 
 def test_rewrite_paths_scripts():
-    result = install.rewrite_paths(
-        "python scripts/check_deps.py", ".claude/skills/video2pr"
-    )
+    result = install.rewrite_paths("python scripts/check_deps.py", ".claude/skills/video2pr")
     assert result == "python .claude/skills/video2pr/scripts/check_deps.py"
 
 
 def test_rewrite_paths_environment():
-    result = install.rewrite_paths(
-        "conda env create -f environment.yml", ".claude/skills/video2pr"
-    )
-    assert "conda env create -f .claude/skills/video2pr/environment.yml" == result
+    result = install.rewrite_paths("conda env create -f environment.yml", ".claude/skills/video2pr")
+    assert result == "conda env create -f .claude/skills/video2pr/environment.yml"
 
 
 def test_rewrite_paths_no_match():
@@ -153,9 +148,9 @@ def test_install_preserves_utf8_skill_text(fake_repo, target_dir, monkeypatch):
 
     install.install_assistant(target_dir, "codex", dry_run=False)
 
-    installed = (
-        target_dir / ".agents" / "skills" / "video2pr" / "SKILL.md"
-    ).read_text(encoding="utf-8")
+    installed = (target_dir / ".agents" / "skills" / "video2pr" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
     assert "Português: negócio e migração." in installed
 
 
@@ -181,9 +176,7 @@ def test_main_nonexistent_target(monkeypatch):
 def test_main_conflict_without_force(fake_repo, target_dir, monkeypatch):
     monkeypatch.setattr(install, "REPO_ROOT", fake_repo)
     (target_dir / ".claude" / "skills" / "video2pr").mkdir(parents=True)
-    monkeypatch.setattr(
-        sys, "argv", ["install_video2pr.py", str(target_dir)]
-    )
+    monkeypatch.setattr(sys, "argv", ["install_video2pr.py", str(target_dir)])
     with pytest.raises(SystemExit, match="1"):
         install.main()
 
