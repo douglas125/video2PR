@@ -61,6 +61,19 @@ Manual install is a folder copy, and the source/destination paths are the same o
 
 </details>
 
+<details>
+<summary>Editing the skill prompt</summary>
+
+The three `SKILL.md` files under `.claude/`, `.agents/`, and `.github/` are **generated** from a single canonical source at `skill/SKILL.md`. To change the prompt, edit the canonical file and regenerate the copies:
+
+```bash
+python scripts/sync_skill.py
+```
+
+CI runs `python scripts/sync_skill.py --check` and fails if the generated files drift from the source.
+
+</details>
+
 ### 3. Run it
 
 In your coding assistant, from your project directory:

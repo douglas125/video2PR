@@ -27,5 +27,8 @@ jobs:
       - name: Install pytest
         run: pip install pytest
 
+      - name: Check SKILL.md is in sync with skill/SKILL.md
+        run: python scripts/sync_skill.py --check
+
       - name: Run tests
         run: pytest -v
