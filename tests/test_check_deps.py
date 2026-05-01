@@ -311,9 +311,11 @@ def test_check_deps_in_env_cleans_up_temp_file_on_subprocess_error():
         captured["tmp_path"] = args[-1]
         raise OSError("simulated subprocess failure")
 
-    with patch("check_deps.subprocess.run", side_effect=fake_run):
-        with pytest.raises(OSError):
-            check_deps.check_deps_in_env("conda")
+    with (
+        patch("check_deps.subprocess.run", side_effect=fake_run),
+        pytest.raises(OSError),
+    ):
+        check_deps.check_deps_in_env("conda")
 
     assert not os.path.exists(captured["tmp_path"]), (
         f"temp script file {captured['tmp_path']!r} was not cleaned up after error"

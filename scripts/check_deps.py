@@ -6,6 +6,7 @@ CLI tools and Python packages are available *inside* that environment.
 This script itself runs from system Python — no conda activation needed.
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -154,10 +155,8 @@ def check_deps_in_env(conda_path="conda"):
             text=True,
         )
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_path)
-        except OSError:
-            pass
     if result.returncode != 0:
         # Fallback: report everything as missing
         all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
