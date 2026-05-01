@@ -1,5 +1,6 @@
 """Tests for scripts/check_deps.py - conda path discovery and JSON parsing."""
 
+import os
 import sys
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -255,6 +256,68 @@ def test_check_deps_in_env_falls_back_when_json_missing():
         "faster-whisper": False,
         "python-docx": False,
     }
+
+
+def test_check_deps_in_env_uses_temp_file_not_dash_c():
+    """Regression: the conda invocation must pass a script *file* path, not
+    a multi-line `-c <script>` argument. On Windows, conda is a .bat wrapper
+    invoked via cmd.exe, which mangles newline-bearing arguments and silently
+    produces empty stdout — making every dep look missing."""
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = list(args)
+        captured["script_existed_during_call"] = os.path.exists(args[-1])
+        return CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout='{"ffmpeg": true, "ffprobe": true,'
+            ' "faster-whisper": true, "python-docx": true}\n',
+            stderr="",
+        )
+
+    with patch("check_deps.subprocess.run", side_effect=fake_run):
+        check_deps.check_deps_in_env("conda")
+
+    args = captured["args"]
+    assert "-c" not in args, f"check_deps_in_env must not pass `-c <script>`; got {args}"
+    assert args[-1].endswith(".py"), f"expected a .py temp file path, got {args[-1]!r}"
+    assert captured["script_existed_during_call"], (
+        "the temp script file must exist on disk while subprocess.run is invoked"
+    )
+
+
+def test_check_deps_in_env_cleans_up_temp_file():
+    """The temp script file must be unlinked after the call returns."""
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["tmp_path"] = args[-1]
+        return CompletedProcess(args=args, returncode=0, stdout="{}\n", stderr="")
+
+    with patch("check_deps.subprocess.run", side_effect=fake_run):
+        check_deps.check_deps_in_env("conda")
+
+    assert not os.path.exists(captured["tmp_path"]), (
+        f"temp script file {captured['tmp_path']!r} was not cleaned up"
+    )
+
+
+def test_check_deps_in_env_cleans_up_temp_file_on_subprocess_error():
+    """Cleanup must run even if subprocess.run raises."""
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["tmp_path"] = args[-1]
+        raise OSError("simulated subprocess failure")
+
+    with patch("check_deps.subprocess.run", side_effect=fake_run):
+        with pytest.raises(OSError):
+            check_deps.check_deps_in_env("conda")
+
+    assert not os.path.exists(captured["tmp_path"]), (
+        f"temp script file {captured['tmp_path']!r} was not cleaned up after error"
+    )
 
 
 def test_main_parses_gpu_json_with_banner(capsys):
