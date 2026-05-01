@@ -6,11 +6,14 @@ CLI tools and Python packages are available *inside* that environment.
 This script itself runs from system Python — no conda activation needed.
 """
 
+import contextlib
 import json
+import os
 import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ENV_NAME = "video2pr"
@@ -138,11 +141,22 @@ def check_deps_in_env(conda_path="conda"):
         "import shutil, json\nresults = {}\n" + "\n".join(checks) + "\nprint(json.dumps(results))"
     )
 
-    result = subprocess.run(
-        [conda_path, "run", "-n", ENV_NAME, "python", "-c", script],
-        capture_output=True,
-        text=True,
-    )
+    # Write the script to a temp .py file rather than passing it via `python -c`.
+    # On Windows, conda is a .bat wrapper invoked through cmd.exe, which mangles
+    # arguments containing newlines — a multi-line `-c` script silently produces
+    # empty stdout in that path, making every dep look missing.
+    fd, tmp_path = tempfile.mkstemp(suffix=".py")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(script)
+        result = subprocess.run(
+            [conda_path, "run", "-n", ENV_NAME, "python", tmp_path],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
     if result.returncode != 0:
         # Fallback: report everything as missing
         all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
