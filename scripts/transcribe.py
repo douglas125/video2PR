@@ -409,6 +409,29 @@ def _run_cuda_worker(args: argparse.Namespace) -> subprocess.CompletedProcess[st
         return subprocess.CompletedProcess(cmd, 124, stdout=stdout, stderr=stderr)
 
 
+def _auto_should_try_cuda() -> bool:
+    """Return whether --device auto should prefer the isolated CUDA path."""
+    try:
+        import ctranslate2
+
+        if not ctranslate2.get_supported_compute_types("cuda"):
+            return False
+    except Exception:
+        return False
+
+    try:
+        smi = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return False
+
+    return smi.returncode == 0 and bool(smi.stdout.strip())
+
+
 def _print_child_output(result: subprocess.CompletedProcess[str]) -> None:
     """Relay child stdout/stderr to the parent streams."""
     if result.stdout:
@@ -450,6 +473,10 @@ def _cuda_failure_report(
 def _run_parent(args: argparse.Namespace) -> None:
     """Run the CLI, isolating CUDA so native crashes cannot be silent."""
     if args.device == "cpu":
+        _run_cli(args)
+        return
+
+    if args.device == "auto" and not _auto_should_try_cuda():
         _run_cli(args)
         return
 

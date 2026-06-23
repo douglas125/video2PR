@@ -40,7 +40,7 @@ def parse_json_output(output: str):
             continue
         if line[end:].strip():
             continue
-        if not isinstance(value, dict | list):
+        if not isinstance(value, (dict, list)):  # noqa: UP038 - bootstrap Python may be <3.10.
             continue
         return value
 

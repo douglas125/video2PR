@@ -96,6 +96,7 @@ def test_device_auto_falls_back_to_cpu_when_cuda_worker_native_crashes(monkeypat
     args = _args(device="auto")
     calls = []
 
+    monkeypatch.setattr(tr, "_auto_should_try_cuda", lambda: True)
     monkeypatch.setattr(
         tr,
         "_run_cuda_worker",
@@ -122,6 +123,54 @@ def test_device_auto_falls_back_to_cpu_when_cuda_worker_native_crashes(monkeypat
     assert "0xC0000409" in captured.err
     assert "signed -1073740791" in captured.err
     assert "retrying on CPU" in captured.err
+    assert '"language": "pt"' in captured.out
+
+
+def test_device_auto_skips_cuda_worker_when_cuda_is_not_candidate(monkeypatch):
+    args = _args(device="auto")
+    calls = []
+
+    monkeypatch.setattr(tr, "_auto_should_try_cuda", lambda: False)
+
+    def fail_cuda_worker(run_args):
+        raise AssertionError("auto should not force cuda on CPU-only hosts")
+
+    def fake_run_cli(run_args):
+        calls.append(run_args.device)
+
+    monkeypatch.setattr(tr, "_run_cuda_worker", fail_cuda_worker)
+    monkeypatch.setattr(tr, "_run_cli", fake_run_cli)
+
+    tr._run_parent(args)
+
+    assert calls == ["auto"]
+
+
+def test_device_auto_prefers_cuda_worker_when_cuda_is_candidate(monkeypatch, capsys):
+    args = _args(device="auto")
+    calls = []
+
+    monkeypatch.setattr(tr, "_auto_should_try_cuda", lambda: True)
+    monkeypatch.setattr(
+        tr,
+        "_run_cuda_worker",
+        lambda args: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"language": "pt", "confidence": 0.96}\n',
+            stderr="",
+        ),
+    )
+
+    def fake_run_cli(run_args):
+        calls.append(run_args.device)
+
+    monkeypatch.setattr(tr, "_run_cli", fake_run_cli)
+
+    tr._run_parent(args)
+
+    captured = capsys.readouterr()
+    assert calls == []
     assert '"language": "pt"' in captured.out
 
 
