@@ -40,7 +40,7 @@ def parse_json_output(output: str):
             continue
         if line[end:].strip():
             continue
-        if not isinstance(value, (dict, list)):
+        if not isinstance(value, (dict, list)):  # noqa: UP038 - bootstrap Python may be <3.10.
             continue
         return value
 
@@ -224,9 +224,13 @@ def main():
                 cuda_version = gpu_info.get("cuda_version")
                 available = gpu_info.get("gpu_available", False)
                 install_cmd = gpu_info.get("install_command")
+                ct2_cuda = gpu_info.get("ct2_cuda_supported", False)
 
                 if device == "cuda" and available:
                     print(f"  GPU: {gpu_name} (CUDA {cuda_version}) — OK")
+                    print("  GPU inference smoke test: OK")
+                elif gpu_name and ct2_cuda and not available:
+                    print(f"  GPU: {gpu_name} detected, but CUDA inference smoke test failed")
                 elif gpu_name and not available:
                     print(f"  GPU: {gpu_name} detected, CTranslate2 is CPU-only")
                     if install_cmd:

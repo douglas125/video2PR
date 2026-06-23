@@ -107,7 +107,7 @@ The `--model` flag controls the quality/speed tradeoff for transcription:
 | `large-v3` | 1550M | ~0.5x realtime | Maximum accuracy, multilingual content |
 | `turbo` | 809M | ~3x realtime | Fast with good accuracy (faster-whisper only) |
 
-Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower. The skill prompts you to install CUDA support if a compatible GPU is detected but not configured.
+Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower. The skill prompts you to install CUDA support if a compatible GPU is detected but not configured. On Windows, CUDA is considered ready only after a tiny real inference smoke test succeeds; `nvidia-smi`, imports, and CTranslate2 supported compute types alone are not enough.
 
 ## Standalone Scripts
 
@@ -169,6 +169,17 @@ conda run -n video2pr pip install --upgrade ctranslate2
 ```
 
 After installing, re-run `python scripts/check_gpu.py` to confirm. If the GPU still isn't picked up, your NVIDIA driver may be older than what the current CTranslate2 wheel requires — check the [CTranslate2 release notes](https://github.com/OpenNMT/CTranslate2/releases) for the minimum driver version.
+
+</details>
+
+<details>
+<summary>CUDA is detected but transcription crashes or falls back to CPU on Windows</summary>
+
+Some CUDA failures happen inside CTranslate2's native runtime before Python can print a traceback. `scripts/check_gpu.py` now runs a tiny CUDA inference smoke test and reports CUDA as usable only when inference succeeds.
+
+If `--device cuda` fails, the script prints the child process exit code, package versions, CTranslate2 compute types, `nvidia-smi` details, and Windows PATH/DLL hints. If `--device auto` sees the same CUDA failure, it warns and retries on CPU so the transcription can continue.
+
+Common causes are incompatible or shadowed CUDA/cuDNN/cuBLAS DLLs, a CTranslate2 wheel/runtime mismatch, GPU memory pressure from another transcription, or an input-dependent native CTranslate2 failure. Keep using `--device auto` unless you specifically want CUDA failures to stop the run.
 
 </details>
 
