@@ -60,8 +60,9 @@ After dependencies pass, check GPU status:
 ```
 
 Interpret the JSON output:
-- If `gpu_available` is `true`: report the GPU (e.g., "GPU acceleration: NVIDIA RTX 3080 via CUDA 12.4") and continue.
+- If `gpu_available` is `true`: report the GPU (e.g., "GPU acceleration: NVIDIA RTX 3080 via CUDA 12.4") and continue. This means a real CUDA inference smoke test passed, not just that CUDA was detected.
 - If `gpu_available` is `false` AND `install_command` is not null: display a **prominent warning** that a GPU is detected but CTranslate2 can't use CUDA yet, note the ~5-20x speedup that GPU acceleration provides, and **ask whether to install CUDA support now or continue with CPU**. Acting on it now — before any audio extraction or transcription — costs nothing; deferring means the user waits through the slow CPU path. If they agree, run the install command directly (e.g., `<conda-path> run -n video2pr <install_command>`) — do NOT just show the command for the user to run manually. After installation, re-run `check_gpu.py` to confirm GPU-accelerated CTranslate2/CUDA support is active before proceeding.
+- If `gpu_available` is `false` AND `ct2_cuda_supported` is `true`: note that CTranslate2 reports CUDA support but the inference smoke test failed, so transcription will use `--device auto` and may fall back to CPU with diagnostics if CUDA crashes.
 - If `device` is `"cpu"` and `install_command` is null: note "Running on CPU" and continue silently.
 
 ## Phase 2: Validate Input

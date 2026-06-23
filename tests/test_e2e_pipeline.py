@@ -106,7 +106,7 @@ def test_full_pipeline_produces_valid_transcript_json(tmp_path):
     assert isinstance(payload["segments"], list)
 
     for seg in payload["segments"]:
-        assert "start" in seg and isinstance(seg["start"], (int, float))
-        assert "end" in seg and isinstance(seg["end"], (int, float))
+        assert "start" in seg and isinstance(seg["start"], int | float)
+        assert "end" in seg and isinstance(seg["end"], int | float)
         assert "text" in seg and isinstance(seg["text"], str)
         assert "words" in seg and isinstance(seg["words"], list)

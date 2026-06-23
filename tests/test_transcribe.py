@@ -1,6 +1,8 @@
 """Tests for scripts/transcribe.py — pure function tests only."""
 
+import argparse
 import json
+import subprocess
 
 import pytest
 from conftest import import_script
@@ -58,6 +60,123 @@ def test_resolve_device_cpu():
 
 
 # ── Custom SRT writer ──────────────────────────────────────────────
+
+
+def _args(device="auto"):
+    return argparse.Namespace(
+        input="audio.wav",
+        output_dir=None,
+        model="small",
+        language=None,
+        device=device,
+        compute_type="default",
+        no_vad=False,
+        detect_language=True,
+        _video2pr_worker=False,
+    )
+
+
+def _fake_diagnostics():
+    return {
+        "selected_device": "cuda",
+        "selected_compute_type": "float16",
+        "model": "base",
+        "packages": {"faster-whisper": "1.2.1", "ctranslate2": "4.7.1"},
+        "ctranslate2": {"cuda_supported_compute_types": ["float16"]},
+        "nvidia_smi": {
+            "gpu_name": "RTX 4070 Laptop GPU",
+            "driver_version": "596.08",
+            "cuda_version": "13.2",
+        },
+        "windows_dll_path_hints": {},
+    }
+
+
+def test_device_auto_falls_back_to_cpu_when_cuda_worker_native_crashes(monkeypatch, capsys):
+    args = _args(device="auto")
+    calls = []
+
+    monkeypatch.setattr(
+        tr,
+        "_run_cuda_worker",
+        lambda args: subprocess.CompletedProcess(
+            args=[],
+            returncode=3221226505,
+            stdout="Loading Whisper model 'base' (device=cuda, compute=float16)...\n",
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(tr, "collect_cuda_diagnostics", lambda **kwargs: _fake_diagnostics())
+
+    def fake_run_cli(run_args):
+        calls.append(run_args.device)
+        print('{"language": "pt", "confidence": 0.96}')
+
+    monkeypatch.setattr(tr, "_run_cli", fake_run_cli)
+
+    tr._run_parent(args)
+
+    captured = capsys.readouterr()
+    assert calls == ["cpu"]
+    assert "failure_class: native_crash" in captured.err
+    assert "0xC0000409" in captured.err
+    assert "signed -1073740791" in captured.err
+    assert "retrying on CPU" in captured.err
+    assert '"language": "pt"' in captured.out
+
+
+def test_device_cuda_fails_loudly_when_worker_native_crashes(monkeypatch, capsys):
+    args = _args(device="cuda")
+
+    monkeypatch.setattr(
+        tr,
+        "_run_cuda_worker",
+        lambda args: subprocess.CompletedProcess(
+            args=[],
+            returncode=-1073740791,
+            stdout="Loading Whisper model 'base' (device=cuda, compute=float16)...\n",
+            stderr="",
+        ),
+    )
+    monkeypatch.setattr(tr, "collect_cuda_diagnostics", lambda **kwargs: _fake_diagnostics())
+
+    with pytest.raises(SystemExit) as exc_info:
+        tr._run_parent(args)
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 1
+    assert "CUDA inference failed." in captured.err
+    assert "failure_class: native_crash" in captured.err
+    assert "child_stdout_tail" in captured.err
+
+
+def test_worker_prints_python_exception_marker(monkeypatch, capsys):
+    args = _args(device="cuda")
+
+    def raise_error(run_args):
+        raise RuntimeError("cuda load failed")
+
+    monkeypatch.setattr(tr, "_run_cli", raise_error)
+
+    with pytest.raises(SystemExit) as exc_info:
+        tr._run_worker(args)
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 1
+    assert tr.PYTHON_EXCEPTION_MARKER in captured.err
+    assert "RuntimeError: cuda load failed" in captured.err
+
+
+def test_missing_runtime_dependency_points_to_video2pr_env(monkeypatch, capsys):
+    monkeypatch.setattr(tr.importlib.util, "find_spec", lambda module_name: None)
+
+    with pytest.raises(SystemExit) as exc_info:
+        tr.ensure_runtime_dependencies()
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 1
+    assert "Missing runtime dependency: faster-whisper" in captured.err
+    assert "conda run -n video2pr" in captured.err
 
 
 def test_write_transcript_srt(tmp_path):

@@ -100,8 +100,8 @@ def test_install_claude_code(fake_repo, target_dir, monkeypatch):
     installed = install.install_assistant(target_dir, "claude-code", dry_run=False)
 
     skill_dir = target_dir / ".claude" / "skills" / "video2pr"
-    # 8 scripts + env + SKILL.md + config
-    assert len(installed) == 11
+    # 9 scripts + env + SKILL.md + config
+    assert len(installed) == 12
     assert (skill_dir / "scripts" / "transcribe.py").exists()
     assert (skill_dir / "environment.yml").exists()
 

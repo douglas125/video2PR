@@ -48,13 +48,92 @@ def test_nvidia_cuda_working(monkeypatch):
         ["float16", "int8"] if device == "cuda" else ["int8"]
     )
     monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
+    monkeypatch.setattr(
+        gpu,
+        "_run_cuda_inference_smoke_test",
+        lambda: {
+            "ok": True,
+            "model": "tiny",
+            "compute_type": "float16",
+            "returncode": 0,
+            "failure_class": None,
+            "stdout_tail": "SMOKE_OK",
+            "stderr_tail": "",
+        },
+    )
 
     result = gpu.check_gpu()
     assert result["device"] == "cuda"
     assert result["gpu_available"] is True
+    assert result["cuda_inference_usable"] is True
+    assert result["ct2_cuda_supported"] is True
     assert result["install_command"] is None
     assert result["gpu_name"] == "NVIDIA RTX 3080"
     assert result["cuda_version"] == "12.4"
+
+
+def test_nvidia_cuda_supported_but_smoke_crashes(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr("platform.machine", lambda: "AMD64")
+    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(subprocess, "run", _fake_nvidia_smi())
+
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: (
+        ["float16", "int8"] if device == "cuda" else ["int8"]
+    )
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
+    monkeypatch.setattr(
+        gpu,
+        "_run_cuda_inference_smoke_test",
+        lambda: {
+            "ok": False,
+            "model": "tiny",
+            "compute_type": "float16",
+            "returncode": -1073740791,
+            "failure_class": "native_crash",
+            "stdout_tail": "SMOKE before model load",
+            "stderr_tail": "",
+        },
+    )
+
+    result = gpu.check_gpu()
+    assert result["device"] == "cpu"
+    assert result["gpu_available"] is False
+    assert result["ct2_cuda_supported"] is True
+    assert result["cuda_inference_usable"] is False
+    assert result["cuda_smoke_test"]["failure_class"] == "native_crash"
+    assert result["cuda_smoke_test"]["returncode"] == -1073740791
+    assert "smoke test failed" in result["message"]
+
+
+def test_nvidia_cuda_supported_but_smoke_python_exception(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr("platform.machine", lambda: "AMD64")
+    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(subprocess, "run", _fake_nvidia_smi())
+
+    fake_ct2 = types.ModuleType("ctranslate2")
+    fake_ct2.get_supported_compute_types = lambda device: ["float16"] if device == "cuda" else []
+    monkeypatch.setitem(sys.modules, "ctranslate2", fake_ct2)
+    monkeypatch.setattr(
+        gpu,
+        "_run_cuda_inference_smoke_test",
+        lambda: {
+            "ok": False,
+            "model": "tiny",
+            "compute_type": "float16",
+            "returncode": 1,
+            "failure_class": "python_exception",
+            "stdout_tail": "",
+            "stderr_tail": "VIDEO2PR_PYTHON_EXCEPTION: RuntimeError: boom",
+        },
+    )
+
+    result = gpu.check_gpu()
+    assert result["gpu_available"] is False
+    assert result["cuda_smoke_test"]["failure_class"] == "python_exception"
+    assert "VIDEO2PR_PYTHON_EXCEPTION" in result["cuda_smoke_test"]["stderr_tail"]
 
 
 def test_nvidia_ct2_cpu_only(monkeypatch):

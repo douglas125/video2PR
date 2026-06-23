@@ -17,6 +17,7 @@ SCRIPT_NAMES = [
     "check_gpu.py",
     "check_update.py",
     "convert_transcript.py",
+    "diagnostics.py",
     "extract_audio.py",
     "extract_frame.py",
     "get_duration.py",
