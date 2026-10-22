@@ -1,253 +1,159 @@
-"""Tests for scripts/check_update.py."""
+"""Regression tests for pinned, recoverable updates."""
 
+import copy
 import json
 import sys
 import urllib.error
+from unittest.mock import patch
 
 import pytest
 from conftest import import_script
 
-check_update = import_script("check_update.py")
+update = import_script("check_update.py")
+SHA = "a" * 40
 
 
-# ── Config loading ──────────────────────────────────────────────────
-
-
-def test_load_config_missing(tmp_path):
-    """No config file → SystemExit(0), stderr has CHECK_SKIPPED."""
-    scripts_dir = tmp_path / "scripts"
-    scripts_dir.mkdir()
-    with pytest.raises(SystemExit, match="0"):
-        check_update.load_config(scripts_dir)
-
-
-def test_load_config_valid(tmp_path):
-    """Write JSON to tmp_path, assert dict returned correctly."""
-    skill_dir = tmp_path / "skill"
-    skill_dir.mkdir()
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir()
-    config = {"repo": "test/repo", "installed_at": "2025-01-01T00:00:00Z"}
-    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config))
-    result = check_update.load_config(scripts_dir)
-    assert result["repo"] == "test/repo"
-
-
-# ── Check mode ──────────────────────────────────────────────────────
-
-
-def test_check_up_to_date(monkeypatch, capsys):
-    """Commit date older than installed_at → UP_TO_DATE."""
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "installed_at": "2026-01-01T00:00:00Z",
-    }
-    monkeypatch.setattr(
-        check_update,
-        "fetch_json",
-        lambda url: [{"commit": {"committer": {"date": "2025-06-01T00:00:00Z"}}}],
-    )
-    result = check_update.check(config)
-    assert result is False
-    assert "UP_TO_DATE" in capsys.readouterr().out
-
-
-def test_check_update_available(monkeypatch, capsys):
-    """Commit date newer → UPDATE_AVAILABLE."""
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "installed_at": "2025-01-01T00:00:00Z",
-    }
-    monkeypatch.setattr(
-        check_update,
-        "fetch_json",
-        lambda url: [{"commit": {"committer": {"date": "2025-06-01T00:00:00Z"}}}],
-    )
-    result = check_update.check(config)
-    assert result is True
-    assert "UPDATE_AVAILABLE" in capsys.readouterr().out
-
-
-def test_check_no_commits(monkeypatch, capsys):
-    """Empty commit list → UP_TO_DATE."""
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "installed_at": "2025-01-01T00:00:00Z",
-    }
-    monkeypatch.setattr(check_update, "fetch_json", lambda url: [])
-    result = check_update.check(config)
-    assert result is False
-    assert "UP_TO_DATE" in capsys.readouterr().out
-
-
-def test_check_skill_md_update_detected(monkeypatch, capsys):
-    """Update in SKILL.md (not scripts/) is detected."""
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "installed_at": "2025-06-01T00:00:00Z",
-        "skill_dir": ".claude/skills/video2pr",
-    }
-
-    def mock_fetch_json(url):
-        if "path=scripts" in url or "path=environment.yml" in url:
-            # scripts and environment.yml are old
-            return [{"commit": {"committer": {"date": "2025-01-01T00:00:00Z"}}}]
-        if "SKILL.md" in url:
-            # SKILL.md has a newer commit
-            return [{"commit": {"committer": {"date": "2025-12-01T00:00:00Z"}}}]
-        return []
-
-    monkeypatch.setattr(check_update, "fetch_json", mock_fetch_json)
-    result = check_update.check(config)
-    assert result is True
-    assert "UPDATE_AVAILABLE" in capsys.readouterr().out
-
-
-# ── Apply mode ──────────────────────────────────────────────────────
-
-
-def test_apply_downloads_and_rewrites(tmp_path, monkeypatch, capsys):
-    """Set up fake skill dir, mock downloads, verify files and rewriting."""
-    skill_dir = tmp_path / ".claude" / "skills" / "video2pr"
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir(parents=True)
-
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "skill_dir": ".claude/skills/video2pr",
-        "installed_at": "2025-01-01T00:00:00Z",
-    }
-    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config))
-    (skill_dir / "SKILL.md").write_text("old content")
-
-    def mock_fetch_text(url):
-        if "SKILL.md" in url:
-            return "Run scripts/check_deps.py and environment.yml"
-        return f"# content for {url.split('/')[-1]}"
-
-    monkeypatch.setattr(check_update, "fetch_text", mock_fetch_text)
-    check_update.apply_update(config, scripts_dir)
-
-    # SKILL.md should have rewritten paths
-    skill_md = (skill_dir / "SKILL.md").read_text()
-    assert ".claude/skills/video2pr/scripts/" in skill_md
-    assert ".claude/skills/video2pr/environment.yml" in skill_md
-
-    # installed_at should be updated
-    new_config = json.loads((skill_dir / ".video2pr_install.json").read_text())
-    assert new_config["installed_at"] > "2025-01-01T00:00:00Z"
-
-    assert "UPDATED" in capsys.readouterr().out
-
-
-def test_apply_downloads_and_rewrites_codex(tmp_path, monkeypatch):
-    skill_dir = tmp_path / ".agents" / "skills" / "video2pr"
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir(parents=True)
-
+@pytest.fixture
+def installation(tmp_path):
+    scripts = tmp_path / ".agents/skills/video2pr/scripts"
+    scripts.mkdir(parents=True)
     config = {
         "repo": "test/repo",
         "branch": "main",
         "skill_dir": ".agents/skills/video2pr",
-        "installed_at": "2025-01-01T00:00:00Z",
+        "installed_at": "2020-01-01T00:00:00Z",
+        "installed_revision": "b" * 40,
     }
-    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config), encoding="utf-8")
-
-    def mock_fetch_text(url):
-        if "SKILL.md" in url:
-            return "Run scripts/check_deps.py and environment.yml in Português"
-        return f"# content for {url.split('/')[-1]}"
-
-    monkeypatch.setattr(check_update, "fetch_text", mock_fetch_text)
-    check_update.apply_update(config, scripts_dir)
-
-    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    assert ".agents/skills/video2pr/scripts/" in skill_md
-    assert ".agents/skills/video2pr/environment.yml" in skill_md
-    assert "Português" in skill_md
+    (scripts.parent / ".video2pr_install.json").write_text(json.dumps(config))
+    (scripts.parent / "SKILL.md").write_text("old skill")
+    return scripts, config
 
 
-def test_apply_downloads_and_rewrites_copilot(tmp_path, monkeypatch):
-    skill_dir = tmp_path / ".github" / "skills" / "video2pr"
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir(parents=True)
+def serve(monkeypatch, fail=None):
+    monkeypatch.setattr(update, "fetch_json", lambda url: {"sha": SHA})
 
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "skill_dir": ".github/skills/video2pr",
-        "installed_at": "2025-01-01T00:00:00Z",
-    }
-    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config), encoding="utf-8")
-
-    def mock_fetch_text(url):
-        if "SKILL.md" in url:
+    def fetch(url):
+        assert f"/{SHA}/" in url
+        if fail and url.endswith(fail):
+            raise urllib.error.URLError("network failed")
+        if url.endswith("scripts/check_update.py"):
+            return "SCRIPT_NAMES = " + repr(update.SCRIPT_NAMES) + "\n"
+        if url.endswith("SKILL.md"):
             return "Run scripts/check_deps.py and environment.yml"
-        return f"# content for {url.split('/')[-1]}"
+        return "# valid payload\n"
 
-    monkeypatch.setattr(check_update, "fetch_text", mock_fetch_text)
-    check_update.apply_update(config, scripts_dir)
-
-    skill_md = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    assert ".github/skills/video2pr/scripts/" in skill_md
-    assert ".github/skills/video2pr/environment.yml" in skill_md
+    monkeypatch.setattr(update, "fetch_text", fetch)
+    return fetch
 
 
-def test_apply_handles_http_error(tmp_path, monkeypatch, capsys):
-    """One download raises HTTPError, others succeed, no crash."""
-    skill_dir = tmp_path / ".claude" / "skills" / "video2pr"
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir(parents=True)
-
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "skill_dir": ".claude/skills/video2pr",
-        "installed_at": "2025-01-01T00:00:00Z",
-    }
-    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config))
-
-    call_count = 0
-
-    def mock_fetch_text(url):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
-        return "# content"
-
-    monkeypatch.setattr(check_update, "fetch_text", mock_fetch_text)
-    # Should not raise
-    check_update.apply_update(config, scripts_dir)
+def test_missing_config_is_optional(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        update.load_config(tmp_path)
+    assert exc.value.code == 0
 
 
-# ── Network error ───────────────────────────────────────────────────
+def test_legacy_install_requires_refresh(monkeypatch, capsys):
+    monkeypatch.setattr(update, "fetch_json", lambda url: {"sha": SHA})
+    assert update.check({"repo": "test/repo", "installed_at": "2999-01-01T00:00:00Z"})
+    assert "UPDATE_AVAILABLE" in capsys.readouterr().out
 
 
-def test_main_network_error(tmp_path, monkeypatch, capsys):
-    """URLError → stdout CHECK_SKIPPED."""
-    # Set up config so load_config succeeds
-    skill_dir = tmp_path / "skill"
-    scripts_dir = skill_dir / "scripts"
-    scripts_dir.mkdir(parents=True)
-    config = {
-        "repo": "test/repo",
-        "branch": "main",
-        "installed_at": "2025-01-01T00:00:00Z",
-    }
-    (skill_dir / ".video2pr_install.json").write_text(json.dumps(config))
+def test_same_revision_up_to_date(monkeypatch):
+    monkeypatch.setattr(update, "fetch_json", lambda url: {"sha": SHA})
+    assert not update.check({"repo": "test/repo", "installed_revision": SHA})
 
-    monkeypatch.setattr(sys, "argv", ["check_update.py"])
-    monkeypatch.setattr(check_update, "load_config", lambda _: config)
 
-    def raise_url_error(url):
-        raise urllib.error.URLError("Network down")
+def test_apply_updates_all_payload_and_metadata(installation, monkeypatch):
+    scripts, config = installation
+    serve(monkeypatch)
+    update.apply_update(config, scripts)
+    assert config["installed_revision"] == SHA
+    assert (scripts.parent / "agents/openai.yaml").is_file()
+    assert (
+        ".agents/skills/video2pr/scripts/check_deps.py" in (scripts.parent / "SKILL.md").read_text()
+    )
+    assert json.loads((scripts.parent / ".video2pr_install.json").read_text()) == config
+    assert len(config["file_hashes"]) == len(update.SCRIPT_NAMES) + 3
 
-    monkeypatch.setattr(check_update, "fetch_json", raise_url_error)
-    check_update.main()
-    assert "CHECK_SKIPPED" in capsys.readouterr().out
+
+def test_apply_copilot_root_agent(tmp_path, monkeypatch):
+    scripts = tmp_path / ".github/skills/video2pr/scripts"
+    scripts.mkdir(parents=True)
+    config = {"repo": "test/repo", "skill_dir": ".github/skills/video2pr"}
+    serve(monkeypatch)
+    update.apply_update(config, scripts)
+    assert (tmp_path / ".github/agents/video2pr.agent.md").is_file()
+
+
+@pytest.mark.parametrize("failure", ["transcribe.py", "SKILL.md", "environment.yml", "openai.yaml"])
+def test_failed_download_preserves_installation(installation, monkeypatch, failure):
+    scripts, config = installation
+    before = copy.deepcopy(config)
+    serve(monkeypatch, failure)
+    with pytest.raises(urllib.error.URLError):
+        update.apply_update(config, scripts)
+    assert config == before
+    assert (scripts.parent / "SKILL.md").read_text() == "old skill"
+    assert json.loads((scripts.parent / ".video2pr_install.json").read_text()) == before
+    assert not (scripts / "transcribe.py").exists()
+
+
+def test_replacement_failure_rolls_back(installation, monkeypatch):
+    scripts, config = installation
+    serve(monkeypatch)
+    original_replace = update.os.replace
+
+    def replace(src, dst):
+        if str(src).endswith("environment.yml") and ".video2pr-update-" in str(src):
+            raise OSError("disk failure")
+        return original_replace(src, dst)
+
+    monkeypatch.setattr(update.os, "replace", replace)
+    with pytest.raises(OSError, match="disk failure"):
+        update.apply_update(config, scripts)
+    assert (scripts.parent / "SKILL.md").read_text() == "old skill"
+    assert not (scripts / "transcribe.py").exists()
+    assert config["installed_revision"] == "b" * 40
+
+
+def test_payload_unchanged_on_unrelated_commit(installation, monkeypatch):
+    scripts, config = installation
+    serve(monkeypatch)
+    update.apply_update(config, scripts)
+    config["installed_revision"] = "c" * 40
+    assert not update.check(config)
+    config["file_hashes"].pop(".agents/skills/video2pr/agents/openai.yaml")
+    assert update.check(config)
+
+
+def test_new_scripts_are_read_without_executing_manifest():
+    content = "SCRIPT_NAMES = ['check_update.py', 'new.py']\nraise RuntimeError('must not run')"
+    assert update.remote_script_names(content) == ["check_update.py", "new.py"]
+    with pytest.raises(ValueError):
+        update.remote_script_names("SCRIPT_NAMES = ['../escape.py']")
+
+
+def test_invalid_location_rejected(installation):
+    scripts, config = installation
+    with pytest.raises(ValueError, match="location"):
+        update.project_root(scripts, ".github/skills/video2pr")
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_cli_network_failure_exit_status(monkeypatch, apply, capsys):
+    monkeypatch.setattr(sys, "argv", ["check_update.py"] + (["--apply"] if apply else []))
+    monkeypatch.setattr(
+        update,
+        "load_config",
+        lambda _: {"repo": "test/repo", "skill_dir": ".agents/skills/video2pr"},
+    )
+    with patch.object(update, "fetch_json", side_effect=urllib.error.URLError("offline")):
+        if apply:
+            # The CLI source location is not an installed skill, also a fatal apply error.
+            with pytest.raises(SystemExit) as exc:
+                update.main()
+            assert exc.value.code == 1
+            assert "UPDATE_FAILED" in capsys.readouterr().err
+        else:
+            update.main()
+            assert "CHECK_SKIPPED" in capsys.readouterr().out

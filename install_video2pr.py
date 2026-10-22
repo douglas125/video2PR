@@ -6,169 +6,126 @@ No files are placed at the target project root (except .github/agents/ for Copil
 """
 
 import argparse
+import hashlib
 import json
 import shutil
+import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.check_update import ASSISTANTS, payload_files, replace_paths, rewrite_paths
+from scripts.check_update import SCRIPT_NAMES as SCRIPT_NAMES
+
 REPO_ROOT = Path(__file__).resolve().parent
 
-SCRIPT_NAMES = [
-    "check_deps.py",
-    "check_gpu.py",
-    "check_update.py",
-    "convert_transcript.py",
-    "diagnostics.py",
-    "extract_audio.py",
-    "extract_frame.py",
-    "get_duration.py",
-    "transcribe.py",
-]
 
-ASSISTANTS = {
-    "claude-code": {
-        "skill_dir": ".claude/skills/video2pr",
-        "skill_md": ".claude/skills/video2pr/SKILL.md",
-        "extra_files": [],
-    },
-    "codex": {
-        "skill_dir": ".agents/skills/video2pr",
-        "skill_md": ".agents/skills/video2pr/SKILL.md",
-        "extra_files": [
-            # (source_relative, dest_relative_to_skill_dir)
-            (".agents/skills/video2pr/agents/openai.yaml", "agents/openai.yaml"),
-        ],
-    },
-    "copilot": {
-        "skill_dir": ".github/skills/video2pr",
-        "skill_md": ".github/skills/video2pr/SKILL.md",
-        "extra_files": [
-            # This one goes outside the skill dir — handled specially
-        ],
-        "root_files": [
-            (".github/agents/video2pr.agent.md", ".github/agents/video2pr.agent.md"),
-        ],
-    },
-}
-
-
-def rewrite_paths(content: str, skill_dir: str) -> str:
-    """Rewrite script and environment paths in SKILL.md to use the skill directory prefix."""
-    content = content.replace("scripts/", f"{skill_dir}/scripts/")
-    content = content.replace("environment.yml", f"{skill_dir}/environment.yml")
-    return content
-
-
-def check_source_files() -> list[str]:
-    """Verify all required source files exist. Returns list of errors."""
-    errors = []
-    for name in SCRIPT_NAMES:
-        if not (REPO_ROOT / "scripts" / name).exists():
-            errors.append(f"Missing script: scripts/{name}")
-    if not (REPO_ROOT / "environment.yml").exists():
-        errors.append("Missing: environment.yml")
-    for cfg in ASSISTANTS.values():
-        skill_md = REPO_ROOT / cfg["skill_md"]
-        if not skill_md.exists():
-            errors.append(f"Missing: {cfg['skill_md']}")
-    return errors
+def check_source_files(assistants=None) -> list[str]:
+    """Validate the complete payload of selected assistants."""
+    sources = {
+        src
+        for name in (assistants or ASSISTANTS)
+        for src, _ in payload_files(ASSISTANTS[name]["skill_dir"])
+    }
+    return [f"Missing: {src}" for src in sorted(sources) if not (REPO_ROOT / src).is_file()]
 
 
 def get_conflicts(target: Path, assistants: list[str]) -> list[str]:
-    """Check for existing skill folders at the target."""
-    conflicts = []
+    paths = []
     for name in assistants:
         cfg = ASSISTANTS[name]
-        skill_path = target / cfg["skill_dir"]
-        if skill_path.exists():
-            conflicts.append(str(skill_path))
-    return conflicts
+        paths.append(target / cfg["skill_dir"])
+        paths.extend(target / dst for _, dst in cfg["root_files"])
+    return [str(p) for p in paths if p.exists()]
+
+
+def source_revision() -> str | None:
+    """Only stamp clean Git checkouts; archives and modified trees are unknown."""
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        if status.stdout.strip():
+            return None
+        return subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def install_assistant(target: Path, name: str, dry_run: bool) -> list[str]:
-    """Install one assistant's skill folder. Returns list of installed paths."""
-    cfg = ASSISTANTS[name]
-    skill_dir = cfg["skill_dir"]
-    dest = target / skill_dir
-    installed = []
+    """Install one assistant using the same transaction as the multi-assistant CLI."""
+    return install_all(target, [name], dry_run)[name]
 
-    # Create scripts directory
-    scripts_dest = dest / "scripts"
+
+def install_all(target: Path, names: list[str], dry_run: bool) -> dict[str, list[str]]:
+    """Stage every selected assistant before replacing any existing installation."""
+    target = target.resolve()
+    payload = [
+        (name, src, dst)
+        for name in names
+        for src, dst in payload_files(ASSISTANTS[name]["skill_dir"])
+    ]
+    for _, src, dst in payload:
+        destination = target / dst
+        source = (REPO_ROOT / src).resolve()
+        if not destination.resolve().is_relative_to(target):
+            raise ValueError(f"Destination escapes project: {destination}")
+        if destination.resolve() == source:
+            raise ValueError("Source and destination overlap; install into another project")
+    installed = {name: [] for name in names}
     if dry_run:
-        print(f"  mkdir -p {scripts_dest.relative_to(target)}")
-    else:
-        scripts_dest.mkdir(parents=True, exist_ok=True)
-
-    # Copy scripts
-    for script_name in SCRIPT_NAMES:
-        src = REPO_ROOT / "scripts" / script_name
-        dst = scripts_dest / script_name
-        if dry_run:
-            print(f"  copy scripts/{script_name} -> {dst.relative_to(target)}")
-        else:
-            shutil.copy2(src, dst)
-        installed.append(f"scripts/{script_name}")
-
-    # Copy environment.yml
-    src = REPO_ROOT / "environment.yml"
-    dst = dest / "environment.yml"
-    if dry_run:
-        print(f"  copy environment.yml -> {dst.relative_to(target)}")
-    else:
-        shutil.copy2(src, dst)
-    installed.append("environment.yml")
-
-    # Copy and rewrite SKILL.md
-    src = REPO_ROOT / cfg["skill_md"]
-    dst = dest / "SKILL.md"
-    content = src.read_text(encoding="utf-8")
-    content = rewrite_paths(content, skill_dir)
-    if dry_run:
-        print(f"  copy+rewrite {cfg['skill_md']} -> {dst.relative_to(target)}")
-    else:
-        dst.write_text(content, encoding="utf-8")
-    installed.append("SKILL.md")
-
-    # Copy extra files within skill dir (e.g., openai.yaml)
-    for src_rel, dst_rel in cfg.get("extra_files", []):
-        src = REPO_ROOT / src_rel
-        dst = dest / dst_rel
-        if dry_run:
-            print(f"  copy {src_rel} -> {dst.relative_to(target)}")
-        else:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
-        installed.append(dst_rel)
-
-    # Copy root-level files (e.g., copilot agent.md)
-    for src_rel, dst_rel in cfg.get("root_files", []):
-        src = REPO_ROOT / src_rel
-        dst = target / dst_rel
-        if dry_run:
-            print(f"  copy {src_rel} -> {dst.relative_to(target)}")
-        else:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
-        installed.append(dst_rel)
-
-    # Write install config
-    config = {
-        "repo": "douglas125/video2PR",
-        "branch": "main",
-        "skill_dir": skill_dir,
-        "installed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "assistants_installed": [name],
-    }
-    config_path = dest / ".video2pr_install.json"
-    if dry_run:
-        print(f"  write {config_path.relative_to(target)}")
-    else:
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-            f.write("\n")
-    installed.append(".video2pr_install.json")
-
+        for name, src, dst in payload:
+            print(f"  copy {src} -> {dst}")
+            installed[name].append(dst.removeprefix(ASSISTANTS[name]["skill_dir"] + "/"))
+        return installed
+    revision = source_revision()
+    with tempfile.TemporaryDirectory(prefix=".video2pr-install-", dir=target) as tmp:
+        stage = Path(tmp)
+        replacements = []
+        for name in names:
+            cfg = ASSISTANTS[name]
+            skill_dir = cfg["skill_dir"]
+            hashes = {}
+            for _, src, dst in (entry for entry in payload if entry[0] == name):
+                staged = stage / dst
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                if src == cfg["skill_md"]:
+                    staged.write_bytes(
+                        rewrite_paths(
+                            (REPO_ROOT / src).read_text(encoding="utf-8"), skill_dir
+                        ).encode("utf-8")
+                    )
+                else:
+                    shutil.copy2(REPO_ROOT / src, staged)
+                hashes[dst] = hashlib.sha256(staged.read_bytes()).hexdigest()
+                installed[name].append(dst.removeprefix(skill_dir + "/"))
+            config = {
+                "repo": "douglas125/video2PR",
+                "branch": "main",
+                "skill_dir": skill_dir,
+                "installed_revision": revision,
+                "file_hashes": hashes,
+                "installed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "assistants_installed": [name],
+            }
+            (stage / skill_dir / ".video2pr_install.json").write_text(
+                json.dumps(config, indent=2) + "\n", encoding="utf-8"
+            )
+            installed[name].append(".video2pr_install.json")
+            replacements.append((stage / skill_dir, target / skill_dir))
+            replacements.extend((stage / dst, target / dst) for _, dst in cfg["root_files"])
+        replace_paths(replacements)
     return installed
 
 
@@ -204,8 +161,10 @@ def main():
         print(f"Error: {target} does not exist or is not a directory.", file=sys.stderr)
         sys.exit(1)
 
+    args.assistants = list(dict.fromkeys(args.assistants))
+
     # Validate source files
-    errors = check_source_files()
+    errors = check_source_files(args.assistants)
     if errors:
         print(
             "Error: Source files missing. Are you running from the video2PR repo?", file=sys.stderr
@@ -225,24 +184,18 @@ def main():
                 print(f"  {c}", file=sys.stderr)
             sys.exit(1)
 
-    # Remove existing skill folders if --force
-    if args.force and not args.dry_run:
-        for name in args.assistants:
-            cfg = ASSISTANTS[name]
-            skill_path = target / cfg["skill_dir"]
-            if skill_path.exists():
-                shutil.rmtree(skill_path)
-
-    # Install
-    if args.dry_run:
-        print(f"Dry run — would install to {target}\n")
+    try:
+        all_installed = install_all(target, args.assistants, args.dry_run)
+    except (OSError, ValueError) as exc:
+        print(f"Installation failed: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     summary_lines = []
     for name in args.assistants:
         cfg = ASSISTANTS[name]
         if args.dry_run:
             print(f"[{name}] -> {cfg['skill_dir']}/")
-        installed = install_assistant(target, name, args.dry_run)
+        installed = all_installed[name]
         if args.dry_run:
             print()
 

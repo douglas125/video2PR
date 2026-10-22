@@ -213,3 +213,38 @@ def test_main_all_three_assistants(fake_repo, target_dir, monkeypatch):
     assert (target_dir / ".agents" / "skills" / "video2pr" / "SKILL.md").exists()
     assert (target_dir / ".github" / "skills" / "video2pr" / "SKILL.md").exists()
     assert (target_dir / ".github" / "agents" / "video2pr.agent.md").exists()
+
+
+def test_root_agent_conflict(target_dir):
+    agent = target_dir / ".github/agents/video2pr.agent.md"
+    agent.parent.mkdir(parents=True)
+    agent.write_text("custom")
+    assert install.get_conflicts(target_dir, ["copilot"]) == [str(agent)]
+
+
+def test_self_install_rejected(fake_repo, monkeypatch):
+    monkeypatch.setattr(install, "REPO_ROOT", fake_repo)
+    before = (fake_repo / ".agents/skills/video2pr/SKILL.md").read_bytes()
+    with pytest.raises(ValueError, match="overlap"):
+        install.install_all(fake_repo, ["codex"], False)
+    assert (fake_repo / ".agents/skills/video2pr/SKILL.md").read_bytes() == before
+
+
+def test_staging_failure_preserves_existing(fake_repo, target_dir, monkeypatch):
+    monkeypatch.setattr(install, "REPO_ROOT", fake_repo)
+    skill = target_dir / ".agents/skills/video2pr"
+    skill.mkdir(parents=True)
+    (skill / "old.txt").write_text("keep")
+    monkeypatch.setattr(
+        install.shutil, "copy2", lambda *args: (_ for _ in ()).throw(OSError("copy failed"))
+    )
+    with pytest.raises(OSError, match="copy failed"):
+        install.install_all(target_dir, ["codex"], False)
+    assert (skill / "old.txt").read_text() == "keep"
+
+
+def test_selected_sources_include_extras(tmp_path, monkeypatch):
+    monkeypatch.setattr(install, "REPO_ROOT", tmp_path)
+    errors = install.check_source_files(["codex"])
+    assert any("openai.yaml" in e for e in errors)
+    assert not any(".claude" in e for e in errors)
