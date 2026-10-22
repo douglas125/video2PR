@@ -60,3 +60,21 @@ def test_check_mode_passes_when_in_sync(monkeypatch, capsys):
 def test_all_three_outputs_have_distinct_frontmatter(rendered):
     fronts = {name: out.split("---\n", 2)[1] for name, out in rendered.items()}
     assert len({fronts["claude"], fronts["codex"], fronts["copilot"]}) == 3
+
+
+def test_workflow_preserves_provenance_and_tracking(rendered):
+    for content in rendered.values():
+        assert "Task ID" in content and "**Issue** column" in content
+        assert "--paginate --slurp" in content
+        assert "external_transcript.json" in content
+        assert "latest mutually compatible" in content
+        assert "Never batch" in content
+
+
+def test_environment_does_not_pin_versions():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    for line in (root / "environment.yml").read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith("-"):
+            assert not any(operator in line for operator in ("=", ">", "<", "~"))

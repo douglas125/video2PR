@@ -21,7 +21,7 @@ Run system Python first; do not assume conda or the environment already works:
 python scripts/check_deps.py
 ```
 
-Capture `CONDA_PATH: <path>` and use that executable for all later conda commands. Quote paths for the active shell (PowerShell uses `& "<conda-path>" ...`). If dependencies are missing, create or update the environment using `environment.yml`, then rerun the check. Stop processing until it passes.
+Capture `CONDA_PATH: <path>` and use that executable for all later conda commands. Quote paths for the active shell (PowerShell uses `& "<conda-path>" ...`). If dependencies are missing, create or update the environment using `environment.yml`, then rerun the check. Stop processing until it passes. Package versions in environment.yml are intentionally unconstrained: choose the latest mutually compatible releases for this platform, including a Python interpreter with compatible wheels. If installation or an inference smoke test fails, inspect dependency metadata and upstream compatibility guidance, adjust only the current environment, and rerun validation. Do not add repository version pins to solve a local compatibility problem.
 
 ## Phase 1: Updates and GPU Status
 
@@ -60,10 +60,10 @@ conda run -n video2pr python scripts/get_duration.py --input "<video-path>"
 
 Set up the output directory by creating `.video2pr/<video-basename>/` if it does not already exist. Use the video filename (without extension) as the subdirectory name.
 
-**Check recording identity before reuse:** `extract_audio.py` records the resolved video path, size, and modification time in `source.json`. Compare these with the current recording before offering reuse. A mismatch requires a different output directory. For legacy outputs without provenance, explain that identity cannot be verified and require explicit confirmation before reuse. Use the selected output directory in all subsequent commands.
+**Check recording identity before reuse:** `extract_audio.py` records the resolved video path, size, and modification time in `source.json`. Compare these with the current recording before offering reuse. A mismatch requires a different output directory. For legacy outputs without provenance, explain that identity cannot be verified and require explicit confirmation before reuse, then write source.json with the current recording identity. Use the selected output directory in all subsequent commands.
 
 **Check for existing outputs:** After creating the output directory, check whether prior runs already produced files in `.video2pr/<video-basename>/`:
-- If `transcript.json` exists: report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3.1-3.4 entirely and go to Phase 4.
+- If `transcript.json` exists, validate that it has a segments list with usable timing (allow an empty list for successfully transcribed silence). Do not reuse zero-time untimed-import segments. Then report "Found existing transcription from a previous run" and ask the user whether to reuse it or re-transcribe. If reusing, skip Phases 3.1-3.4 entirely and go to Phase 4.
 - If `audio.wav` exists but `transcript.json` does not: report "Found previously extracted audio" and ask whether to reuse it. If reusing, skip Phase 3.1.
 - If `plan.md` or `summary.md` exist: note their presence but always regenerate them (codebase may have changed).
 - If `progress.md` exists: report "Found progress tracker from previous run(s) — N of M tasks completed" (read the file to get counts). This file will be used in Phase 5 to carry forward completion status.
@@ -82,17 +82,14 @@ conda run -n video2pr python scripts/extract_audio.py --input "<video-path>" --o
 
 ### Phase 3.2: Check for External Transcript
 
-If an external transcript was found in Phase 2, convert it first and read `external_transcript_meta.json`. Use `has_timestamps` to choose the route below; never infer timestamp availability from the extension or fabricated numeric values.
+If an external transcript was found in Phase 2, convert it exactly once and read `external_transcript_meta.json`. Use `has_timestamps` to choose the route below; never infer timestamp availability from the extension or fabricated numeric values.
 
-- **With timestamps** -> Convert and skip Whisper, go to Phase 3.4:
-  ```bash
-  conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
-  ```
-
-- **Without timestamps** -> Convert to get speaker info, then continue to Phase 3.3 for Whisper transcription:
-  ```bash
-  conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
-  ```
+Convert using:
+```bash
+conda run -n video2pr python scripts/convert_transcript.py --input "<transcript-path>" --output-dir ".video2pr/<video-basename>"
+```
+- If `has_timestamps` is true, use the published transcript.json and go to Phase 3.4.
+- Otherwise, the import is preserved only in external_transcript.json. Continue to Phase 3.3 and publish transcript.json only after Whisper succeeds. A prior canonical transcript may still exist; it does not represent completion of this requested re-transcription.
 
 If no external transcript -> continue to Phase 3.3.
 
@@ -172,8 +169,8 @@ For each actionable item, {{CODEBASE_SEARCH_INSTRUCTION}}. Classify each item:
 If `.video2pr/<video-basename>/progress.md` exists from a prior run:
 
 1. Read every progress row, preserving its persistent Task ID, implementation status, issue number/URL, and completion run separately. Migrate legacy `[issue #N]` rows to unchecked implementation status plus an Issue field; preserve legacy `[x]` markers and append-only logs.
-2. For each completed task, match it to the current plan's tasks by persistent **Task ID** first. For legacy tasks without IDs, use **title** (fuzzy match — titles may vary slightly across regenerations; use transcript excerpt as tiebreaker if titles are ambiguous).
-   - If the codebase scan (Step 5.2) confirms the code still exists → carry forward the `[x]` completion marker.
+2. For each prior task, match it to the current plan's tasks by persistent **Task ID** first. For legacy tasks without IDs, use **title** (fuzzy match — titles may vary slightly across regenerations; use transcript excerpt as tiebreaker if titles are ambiguous).
+   - For previously completed tasks, if the codebase scan (Step 5.2) confirms the code still exists → carry forward the `[x]` completion marker.
    - If the code was removed or reverted → clear the marker (task needs re-implementation).
 3. Completed tasks in old progress that have no match in the new plan → archive them in a "Previously Completed (no longer in plan)" note at the bottom of `progress.md` for reference. Do not add them back to the plan.
 
@@ -466,7 +463,7 @@ Write `.video2pr/<video-basename>/issues_plan.md` with one section per task cont
 - **Rationale**: <one sentence>
 ```
 
-For the **Labels** field, pick from the cached `gh label list` results. Map the task category from Step 5.1 to existing labels (e.g. `bug report` → `bug`, `feature request` → `enhancement`, `documentation` → `documentation`, an open question raised in the meeting → `question`). Always prefer an existing label over inventing a new one. Only populate **Proposed new labels** when no existing label reasonably fits — these are *suggestions*, not auto-created.
+For the **Labels** field, pick from the cached paginated labels. Map the task category from Step 5.1 to existing labels (e.g. `bug report` → `bug`, `feature request` → `enhancement`, `documentation` → `documentation`, an open question raised in the meeting → `question`). Always prefer an existing label over inventing a new one. Only populate **Proposed new labels** when no existing label reasonably fits — these are *suggestions*, not auto-created.
 
 Present this list to the user and require **explicit per-task confirmation** before any `gh` write call. Never batch. When confirming, also let the user accept/reject the proposed labels and any new-label suggestions.
 

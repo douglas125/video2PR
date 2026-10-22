@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import os
 import platform
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import wave
 from pathlib import Path
+
+from check_update import replace_paths
 
 PYTHON_EXCEPTION_MARKER = "VIDEO2PR_PYTHON_EXCEPTION"
 
@@ -264,3 +269,83 @@ def format_cuda_failure_report(
 def indent_block(text: str, prefix: str) -> str:
     """Indent each line in a block."""
     return "\n".join(prefix + line for line in text.splitlines())
+
+
+def write_outputs(output_dir: Path, outputs: dict[str, bytes]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".stage-", dir=output_dir) as tmp:
+        staged = []
+        for name, data in outputs.items():
+            path = Path(tmp) / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            staged.append((path, output_dir / name))
+        replace_paths(staged)
+
+
+def json_bytes(value) -> bytes:
+    return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+
+
+def source_identity(path: Path) -> dict:
+    stat = path.stat()
+    return {"path": str(path.resolve()), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+
+
+def validate_source(path: Path, output_dir: Path) -> None:
+    provenance = output_dir / "source.json"
+    if provenance.exists() and json.loads(
+        provenance.read_text(encoding="utf-8")
+    ) != source_identity(path):
+        raise ValueError(
+            "Output directory belongs to a different or changed recording; choose a new output directory"
+        )
+
+
+def read_audio(audio_path: Path):
+    """Read normalized PCM directly; use the required FFmpeg CLI for other media.
+
+    Passing a float32 waveform to Whisper avoids depending on PyAV's changing
+    container-open keyword API. NumPy is supplied by the inference runtime.
+    """
+    import numpy as np
+
+    try:
+        with wave.open(str(audio_path), "rb") as audio:
+            if (
+                audio.getnchannels() == 1
+                and audio.getsampwidth() == 2
+                and audio.getframerate() == 16000
+            ):
+                return (
+                    np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2").astype(
+                        np.float32
+                    )
+                    / 32768.0
+                )
+    except (wave.Error, EOFError):
+        pass
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-nostdin",
+            "-i",
+            str(audio_path),
+            "-f",
+            "f32le",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "pipe:1",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError(
+            "Audio decoding failed: " + result.stderr.decode("utf-8", errors="replace")
+        )
+    return np.frombuffer(result.stdout, dtype="<f4").copy()

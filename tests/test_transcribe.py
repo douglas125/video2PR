@@ -10,6 +10,12 @@ from conftest import import_script
 tr = import_script("transcribe.py")
 
 
+@pytest.fixture(autouse=True)
+def mock_audio_decoder(monkeypatch):
+    # Pure inference unit tests use synthetic model objects, not a native runtime.
+    monkeypatch.setattr(tr, "read_audio", lambda path: str(path))
+
+
 # ── SRT timestamp round-trips ──────────────────────────────────────
 
 

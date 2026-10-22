@@ -431,7 +431,8 @@ def test_untimed_import_is_preserved_for_speaker_enrichment(tmp_path):
     meta = json.loads((out / "external_transcript_meta.json").read_text())
     assert meta["has_timestamps"] is False
     assert meta["has_speakers"] is True
-    assert (out / "external_transcript.json").read_bytes() == (out / "transcript.json").read_bytes()
+    assert not (out / "transcript.json").exists()
+    assert (out / "external_transcript.json").is_file()
 
 
 def test_untimed_docx_never_invents_timing(tmp_path, monkeypatch):
@@ -453,7 +454,7 @@ def test_untimed_docx_never_invents_timing(tmp_path, monkeypatch):
     ct.convert(source, out, "auto")
     meta = json.loads((out / "external_transcript_meta.json").read_text())
     assert meta["has_timestamps"] is False
-    segment = json.loads((out / "transcript.json").read_text())["segments"][0]
+    segment = json.loads((out / "external_transcript.json").read_text())["segments"][0]
     assert segment["start"] == segment["end"] == 0
     assert segment["speaker"] == "Alice"
 
@@ -462,3 +463,14 @@ def test_timestamp_fraction_and_validation():
     assert ct.parse_vtt_timestamp("00:01.5") == 1.5
     with pytest.raises(ValueError):
         ct.parse_vtt_timestamp("00:61.000")
+
+
+def test_untimed_import_preserves_timestamped_transcript(tmp_path):
+    source = tmp_path / "untimed.txt"
+    source.write_text("Alice: A new request.")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "transcript.json").write_text("previous timed transcript")
+    ct.convert(source, out, "auto")
+    assert (out / "transcript.json").read_text() == "previous timed transcript"
+    assert (out / "external_transcript.json").exists()

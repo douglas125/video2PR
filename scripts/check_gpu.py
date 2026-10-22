@@ -136,15 +136,18 @@ def _run_cuda_inference_smoke_test(
 import faulthandler
 import sys
 import traceback
+from pathlib import Path
 
 faulthandler.enable(all_threads=True)
 try:
     from faster_whisper import WhisperModel
+    sys.path.insert(0, sys.argv[4])
+    from diagnostics import read_audio
 
     print("SMOKE before model load", flush=True)
     model = WhisperModel(sys.argv[1], device="cuda", compute_type=sys.argv[3])
     print("SMOKE after model load", flush=True)
-    segments, info = model.transcribe(sys.argv[2], beam_size=1, vad_filter=False)
+    segments, info = model.transcribe(read_audio(Path(sys.argv[2])), beam_size=1, vad_filter=False)
     print("SMOKE after transcribe call", flush=True)
     for _ in segments:
         break
@@ -157,7 +160,7 @@ except BaseException as exc:
     try:
         _write_smoke_wav(audio_path)
         result = subprocess.run(
-            [sys.executable, "-c", script, model_name, str(audio_path), compute_type],
+            [sys.executable, "-c", script, model_name, str(audio_path), compute_type, str(SCRIPT_DIR)],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,

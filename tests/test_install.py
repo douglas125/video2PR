@@ -248,3 +248,49 @@ def test_selected_sources_include_extras(tmp_path, monkeypatch):
     errors = install.check_source_files(["codex"])
     assert any("openai.yaml" in e for e in errors)
     assert not any(".claude" in e for e in errors)
+
+
+def test_legacy_updater_payload_has_all_runtime_dependencies(tmp_path):
+    import shutil
+    import subprocess
+
+    from conftest import REPO_ROOT
+
+    legacy_names = [
+        "check_deps.py",
+        "check_gpu.py",
+        "check_update.py",
+        "convert_transcript.py",
+        "diagnostics.py",
+        "extract_audio.py",
+        "extract_frame.py",
+        "get_duration.py",
+        "transcribe.py",
+    ]
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    for name in legacy_names:
+        shutil.copy2(REPO_ROOT / "scripts" / name, scripts / name)
+    script = "import transcribe,convert_transcript,extract_audio,extract_frame,check_gpu"
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=scripts, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_real_install_is_self_contained(tmp_path, monkeypatch):
+    import subprocess
+
+    from conftest import REPO_ROOT
+
+    monkeypatch.setattr(install, "REPO_ROOT", REPO_ROOT)
+    install.install_all(tmp_path, ["codex"], False)
+    scripts = tmp_path / ".agents/skills/video2pr/scripts"
+    for name in ["transcribe.py", "convert_transcript.py", "extract_audio.py", "extract_frame.py"]:
+        result = subprocess.run(
+            [sys.executable, str(scripts / name), "--help"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr

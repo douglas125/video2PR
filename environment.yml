@@ -3,12 +3,10 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.13
+  - python
   - ffmpeg
   - pip
   - pip:
-      - faster-whisper>=1.0,<2.0
-      # faster-whisper 1.x passes metadata_errors, removed by PyAV 19.
-      - av>=11,<19
-      - python-docx>=1.0,<2.0
-      - pytest>=7.0
+      - faster-whisper
+      - python-docx
+      - pytest

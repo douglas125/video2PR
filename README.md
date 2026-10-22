@@ -86,7 +86,7 @@ Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`)
 5. Produces `summary.md` with topics, action items, decisions, visual reference commands, and a link to the implementation plan
 6. Optionally creates GitHub Issues from plan tasks (each confirmed individually before creation)
 
-If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically. Zoom, Google Meet, and MS Teams formats are auto-detected. Speaker-prefixed TXT and untimed DOCX imports are preserved in `external_transcript.json` for enrichment after Whisper supplies timestamps. TXT/DOCX end times may be estimated; metadata distinguishes observed starts from unknown timing. Unrecognized imports fail without replacing prior transcripts.
+If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically. Zoom, Google Meet, and MS Teams formats are auto-detected. Speaker-prefixed TXT and untimed DOCX imports are preserved in `external_transcript.json` for enrichment after Whisper supplies timestamps. TXT/DOCX end times may be estimated; metadata distinguishes observed starts from unknown timing. Unrecognized imports fail without replacing prior transcripts. Untimed imports are stored separately; a prior timestamped transcript survives until Whisper successfully publishes its replacement.
 
 ## Whisper Model Choices
 
@@ -196,7 +196,7 @@ The three `SKILL.md` files under `.claude/`, `.agents/`, and `.github/` are gene
 
 ## Development and validation
 
-The preferred runtime is Python 3.13 from `environment.yml`; helper scripts are also tested on Python 3.12 and 3.14. CPU integration tests run on Windows and Linux using the environment and its declared dependency bounds. GPU behavior has mocked failure-path tests and a separate opt-in hardware smoke check.
+Package and interpreter versions in `environment.yml` are intentionally unconstrained. Setup should select the latest mutually compatible releases for the current platform and verify them with an inference smoke test. If a dependency fails, inspect current upstream compatibility guidance and adjust the local environment without adding repository pins. Helpers are tested on Python 3.12, 3.13, and 3.14; CPU integration tests run on Windows and Linux with Python 3.13 as a test target, not an installation requirement. GPU behavior has mocked failure-path tests and a separate opt-in hardware smoke check.
 
 ```bash
 python -m pytest -q --ignore=tests/test_e2e_pipeline.py
@@ -207,3 +207,5 @@ python scripts/sync_skill.py --check
 ```
 
 Integration fixtures use FFV1 video and PCM audio, avoiding optional H.264 encoders. A synthetic speech fixture exercises nonempty text and word timestamps without requiring exact recognition. Issue linkage and implementation completion are tracked separately, with persistent task IDs across reruns.
+
+Install development tools with `python -m pip install ruff pre-commit`. Ruff is installed without a version constraint in CI; local pre-commit hooks use the Ruff installed in the developer environment. Normalized PCM audio is read directly, and other standalone media is decoded by the required FFmpeg CLI, so transcription does not depend on PyAV container-open keyword compatibility.

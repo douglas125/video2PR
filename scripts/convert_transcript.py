@@ -8,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-from artifacts import json_bytes, write_outputs
+from diagnostics import json_bytes, write_outputs
 
 
 def detect_format(input_path: Path) -> str:
@@ -400,15 +400,14 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
         "segment_count": len(segments),
     }
     transcript = {"segments": segments}
-    write_outputs(
-        output_dir,
-        {
-            "transcript.json": json_bytes(transcript),
-            "external_transcript.json": json_bytes(transcript),
-            f"external_transcript_original{input_path.suffix}": input_path.read_bytes(),
-            "external_transcript_meta.json": json_bytes(meta),
-        },
-    )
+    outputs = {
+        "external_transcript.json": json_bytes(transcript),
+        f"external_transcript_original{input_path.suffix}": input_path.read_bytes(),
+        "external_transcript_meta.json": json_bytes(meta),
+    }
+    if has_timestamps:
+        outputs["transcript.json"] = json_bytes(transcript)
+    write_outputs(output_dir, outputs)
     print(f"Transcript and metadata saved to {output_dir}")
 
 

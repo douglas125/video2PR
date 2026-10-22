@@ -8,7 +8,7 @@ import sys
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from artifacts import validate_source
+from diagnostics import validate_source
 
 
 def normalize_timestamp(ts: str) -> str:

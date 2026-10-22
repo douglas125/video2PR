@@ -40,7 +40,7 @@ def _generic_frontmatter(allowed_tools: str) -> str:
 name: video2pr
 {SHARED_DESCRIPTION}
 license: MIT
-compatibility: "Requires conda, ffmpeg, and Python 3.13+. Install with: conda env create -f environment.yml"
+compatibility: "Requires conda, ffmpeg, and a Python version compatible with the installed inference packages. Install with: conda env create -f environment.yml"
 metadata:
   author: douglas125
   version: "1.0"
