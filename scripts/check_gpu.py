@@ -160,7 +160,15 @@ except BaseException as exc:
     try:
         _write_smoke_wav(audio_path)
         result = subprocess.run(
-            [sys.executable, "-c", script, model_name, str(audio_path), compute_type, str(SCRIPT_DIR)],
+            [
+                sys.executable,
+                "-c",
+                script,
+                model_name,
+                str(audio_path),
+                compute_type,
+                str(SCRIPT_DIR),
+            ],
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
