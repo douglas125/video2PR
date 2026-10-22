@@ -150,7 +150,8 @@ def test_nvidia_ct2_cpu_only(monkeypatch):
     result = gpu.check_gpu()
     assert result["device"] == "cpu"
     assert result["gpu_available"] is False
-    assert result["install_command"] is not None
+    assert result["install_command"] is None
+    assert result["failure_stage"] == "driver_or_compute_types"
 
 
 def test_nvidia_ct2_missing(monkeypatch):
@@ -253,4 +254,5 @@ def test_windows_nvidia_smi_path(monkeypatch):
 
     result = gpu.check_gpu()
     assert result["gpu_name"] == "NVIDIA RTX 4090"
-    assert result["install_command"] is not None
+    assert result["install_command"] is None
+    assert result["failure_stage"] == "driver_or_compute_types"

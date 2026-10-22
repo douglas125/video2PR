@@ -143,7 +143,7 @@ def test_device_auto_skips_cuda_worker_when_cuda_is_not_candidate(monkeypatch):
 
     tr._run_parent(args)
 
-    assert calls == ["auto"]
+    assert calls == ["cpu"]
 
 
 def test_device_auto_prefers_cuda_worker_when_cuda_is_candidate(monkeypatch, capsys):
@@ -344,3 +344,99 @@ def test_write_transcript_json_empty_segments(tmp_path):
     tr.write_transcript_json(json_path, [])
     data = json.loads(json_path.read_text(encoding="utf-8"))
     assert data == {"segments": []}
+
+
+def test_detection_does_not_decode_a_segment(monkeypatch):
+    from types import SimpleNamespace
+
+    def segments():
+        raise AssertionError("language detection must not iterate transcript")
+        yield
+
+    info = SimpleNamespace(language="en", language_probability=0.95, all_language_probs=[])
+    model = SimpleNamespace(transcribe=lambda *a, **kw: (segments(), info))
+    monkeypatch.setattr(tr, "load_model", lambda *a, **kw: model)
+    assert tr.detect_language(tr.Path("audio.wav"))["language"] == "en"
+
+
+def test_detection_stdout_is_json(tmp_path, monkeypatch, capsys):
+    import sys
+    from types import SimpleNamespace
+
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    info = SimpleNamespace(language="en", language_probability=0.95, all_language_probs=[])
+    model = SimpleNamespace(transcribe=lambda *a, **kw: (iter([]), info))
+    monkeypatch.setitem(
+        sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=lambda *a, **kw: model)
+    )
+    args = _args("cpu")
+    args.input = str(audio)
+    tr._run_cli(args)
+    out = capsys.readouterr()
+    assert json.loads(out.out)["language"] == "en"
+    assert "Loading Whisper" in out.err
+
+
+def test_nonempty_transcription_writes_words_and_progress(tmp_path, capsys):
+    from types import SimpleNamespace as NS
+
+    word = NS(word=" Hello", start=0.0, end=0.5, probability=0.99)
+    segment = NS(start=0.0, end=1.0, text=" Hello ", words=[word])
+    model = NS(transcribe=lambda *a, **kw: (iter([segment]), NS(language="en")))
+    result = tr.run_transcription(tmp_path / "audio.wav", tmp_path, model, "en")
+    assert result["segments"][0]["words"][0]["probability"] == 0.99
+    assert "Hello" in (tmp_path / "transcript.srt").read_text()
+    assert "Progress: 1 segments" in capsys.readouterr().err
+
+
+def test_inference_failure_does_not_replace_prior_transcript(tmp_path):
+    from types import SimpleNamespace as NS
+
+    def segments():
+        yield NS(start=0.0, end=1.0, text="partial", words=[])
+        raise RuntimeError("native inference wrapper error")
+
+    model = NS(transcribe=lambda *a, **kw: (segments(), NS(language="en")))
+    (tmp_path / "transcript.json").write_text("previous")
+    with pytest.raises(RuntimeError):
+        tr.run_transcription(tmp_path / "audio.wav", tmp_path, model)
+    assert (tmp_path / "transcript.json").read_text() == "previous"
+
+
+def test_cpu_fallback_replaces_gpu_only_compute():
+    args = _args("cpu")
+    args.compute_type = "float16"
+    with pytest.raises(ValueError, match="incompatible"):
+        tr._ensure_cpu_compute(args)
+    tr._ensure_cpu_compute(args, fallback=True)
+    assert args.compute_type == "int8"
+
+
+def test_worker_streams_stderr_before_exit(tmp_path, monkeypatch):
+    import sys
+
+    release = tmp_path / "release"
+    script = (
+        "import sys,time,pathlib; print('progress',file=sys.stderr,flush=True); "
+        "p=pathlib.Path(sys.argv[1]); deadline=time.monotonic()+5; "
+        "exec('while not p.exists() and time.monotonic()<deadline: time.sleep(0.01)'); "
+        "print('done'); sys.exit(0 if p.exists() else 2)"
+    )
+    monkeypatch.setattr(
+        tr, "_worker_command", lambda *a: [sys.executable, "-c", script, str(release)]
+    )
+
+    class Sink:
+        def write(self, text):
+            if "progress" in text:
+                release.write_text("seen")
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(sys, "stderr", Sink())
+    result = tr._run_cuda_worker(_args("cuda"))
+    assert result.returncode == 0
+    assert result.stderr_streamed
+    assert "done" in result.stdout

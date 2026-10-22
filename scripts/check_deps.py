@@ -194,41 +194,6 @@ def main():
 
     print("\nAll dependencies found.")
 
-    # GPU status check
-    gpu_script = Path(__file__).resolve().parent / "check_gpu.py"
-    if gpu_script.exists():
-        gpu_result = subprocess.run(
-            [conda_path, "run", "-n", ENV_NAME, "python", str(gpu_script)],
-            capture_output=True,
-            text=True,
-        )
-        if gpu_result.returncode == 0:
-            gpu_info = parse_json_output(gpu_result.stdout)
-            try:
-                if not isinstance(gpu_info, dict):
-                    raise ValueError("missing JSON payload")
-                device = gpu_info.get("device", "cpu")
-                gpu_name = gpu_info.get("gpu_name")
-                cuda_version = gpu_info.get("cuda_version")
-                available = gpu_info.get("gpu_available", False)
-                install_cmd = gpu_info.get("install_command")
-                ct2_cuda = gpu_info.get("ct2_cuda_supported", False)
-
-                if device == "cuda" and available:
-                    print(f"  GPU: {gpu_name} (CUDA {cuda_version}) — OK")
-                    print("  GPU inference smoke test: OK")
-                elif gpu_name and ct2_cuda and not available:
-                    print(f"  GPU: {gpu_name} detected, but CUDA inference smoke test failed")
-                elif gpu_name and not available:
-                    print(f"  GPU: {gpu_name} detected, CTranslate2 is CPU-only")
-                    if install_cmd:
-                        print("  To enable GPU acceleration (~5-20x faster transcription):")
-                        print(f"    {install_cmd}")
-                else:
-                    print("  GPU: CPU only")
-            except (ValueError, KeyError):
-                print("  GPU: detection failed")
-
 
 if __name__ == "__main__":
     main()

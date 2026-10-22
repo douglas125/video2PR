@@ -322,27 +322,17 @@ def test_check_deps_in_env_cleans_up_temp_file_on_subprocess_error():
     )
 
 
-def test_main_parses_gpu_json_with_banner(capsys):
-    gpu_stdout = (
-        "preparing...\n"
-        '{"device": "cuda", "gpu_name": "RTX 4090", "cuda_version": "12.4", '
-        '"gpu_available": true, "install_command": null}\n'
-    )
+def test_dependency_check_does_not_repeat_gpu_inference(capsys):
     deps = {"ffmpeg": True, "ffprobe": True, "faster-whisper": True, "python-docx": True}
-
     with (
         patch("check_deps.find_conda", return_value="conda"),
         patch("check_deps.env_exists", return_value=True),
         patch("check_deps.check_deps_in_env", return_value=deps),
-        patch(
-            "check_deps.subprocess.run",
-            return_value=CompletedProcess(args=[], returncode=0, stdout=gpu_stdout, stderr=""),
-        ),
+        patch("check_deps.subprocess.run") as run,
     ):
         check_deps.main()
-
-    out = capsys.readouterr().out
-    assert "GPU: RTX 4090 (CUDA 12.4) — OK" in out
+    run.assert_not_called()
+    assert "All dependencies found" in capsys.readouterr().out
 
 
 def test_parse_enclosing_json_before_nested_object():

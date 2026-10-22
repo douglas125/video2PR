@@ -10,6 +10,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -18,10 +20,13 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from artifacts import json_bytes  # noqa: E402
+from check_update import replace_paths  # noqa: E402
 from diagnostics import (  # noqa: E402
     PYTHON_EXCEPTION_MARKER,
     classify_worker_failure,
     collect_cuda_diagnostics,
+    find_nvidia_smi,
     format_cuda_failure_report,
 )
 
@@ -88,7 +93,9 @@ def load_model(model_name: str, device: str = "auto", compute_type: str = "defau
         resolved_compute = compute_type
 
     print(
-        f"Loading Whisper model '{model_name}' (device={resolved_device}, compute={resolved_compute})..."
+        f"Loading Whisper model '{model_name}' (device={resolved_device}, compute={resolved_compute})...",
+        file=sys.stderr,
+        flush=True,
     )
     return WhisperModel(model_name, device=resolved_device, compute_type=resolved_compute)
 
@@ -124,14 +131,12 @@ def detect_language(
     model = load_model(model_name, device=device, compute_type=compute_type)
 
     # Use faster-whisper's built-in language detection
-    segments, info = model.transcribe(
+    _segments, info = model.transcribe(
         str(audio_path),
         beam_size=1,
         vad_filter=True,
     )
-    # Must consume at least one segment to finalize detection
-    for _ in segments:
-        break
+    # Language metadata is resolved before the lazy transcript generator is returned.
 
     alternatives = []
     if info.all_language_probs:
@@ -191,6 +196,7 @@ def run_transcription(
 
     # Materialize segments from generator (transcription happens during iteration)
     segments = []
+    last_progress = 0.0
     for seg in segments_gen:
         words = []
         for w in seg.words or []:
@@ -208,9 +214,24 @@ def run_transcription(
             }
         )
 
-    # Write output files
-    write_transcript_json(output_dir / "transcript.json", segments)
-    write_transcript_srt(output_dir / "transcript.srt", segments)
+        now = time.perf_counter()
+        if len(segments) == 1 or now - last_progress >= 5:
+            print(
+                f"Progress: {len(segments)} segments, {seg.end:.1f}s of audio processed",
+                file=sys.stderr,
+                flush=True,
+            )
+            last_progress = now
+
+    # Publish the transcript pair only after inference and both serializers succeed.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".transcript-", dir=output_dir) as tmp:
+        stage = Path(tmp)
+        (stage / "transcript.json").write_bytes(json_bytes({"segments": segments}))
+        write_transcript_srt(stage / "transcript.srt", segments)
+        replace_paths(
+            [(stage / name, output_dir / name) for name in ("transcript.json", "transcript.srt")]
+        )
 
     return {"segments": segments, "language": info.language}
 
@@ -232,11 +253,11 @@ def transcribe(
     if duration:
         print(f"Audio duration: {duration:.1f}s ({duration / 60:.1f} min)")
 
-    start_time = time.time()
+    start_time = time.perf_counter()
     result = run_transcription(
         audio_path, output_dir, model, language=language, vad_filter=vad_filter
     )
-    elapsed = time.time() - start_time
+    elapsed = time.perf_counter() - start_time
 
     n_segments = len(result["segments"])
     if duration and elapsed > 0:
@@ -265,12 +286,13 @@ def _get_audio_duration(audio_path: Path) -> float | None:
             ],
             capture_output=True,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             return None
         info = json.loads(result.stdout)
         return float(info["format"]["duration"])
-    except (KeyError, json.JSONDecodeError, FileNotFoundError):
+    except (KeyError, ValueError, OSError, subprocess.TimeoutExpired):
         return None
 
 
@@ -386,42 +408,63 @@ def _worker_command(args: argparse.Namespace, device: str) -> list[str]:
     return cmd
 
 
-def _run_cuda_worker(args: argparse.Namespace) -> subprocess.CompletedProcess[str] | None:
-    """Run a CUDA operation in a child process so native crashes are observable."""
+def _run_cuda_worker(args: argparse.Namespace) -> subprocess.CompletedProcess[str]:
+    """Stream stderr while retaining bounded tails and isolated native execution."""
     env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
+    env.update(PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
     cmd = _worker_command(args, "cuda")
-    try:
-        return subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=CUDA_WORKER_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode(errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode(errors="replace")
-        return subprocess.CompletedProcess(cmd, 124, stdout=stdout, stderr=stderr)
+    tails = {"stdout": "", "stderr": ""}
+
+    def drain(pipe, name):
+        try:
+            for line in pipe:
+                tails[name] = (tails[name] + line)[-65536:]
+                if name == "stderr":
+                    print(line, end="", file=sys.stderr, flush=True)
+        finally:
+            pipe.close()
+
+    with subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    ) as child:
+        readers = [
+            threading.Thread(target=drain, args=(pipe, name), daemon=True)
+            for pipe, name in ((child.stdout, "stdout"), (child.stderr, "stderr"))
+        ]
+        for reader in readers:
+            reader.start()
+        try:
+            returncode = child.wait(timeout=CUDA_WORKER_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+            returncode = 124
+        except BaseException:
+            child.kill()
+            child.wait()
+            raise
+        finally:
+            for reader in readers:
+                reader.join()
+    result = subprocess.CompletedProcess(cmd, returncode, tails["stdout"], tails["stderr"])
+    result.stderr_streamed = True
+    return result
 
 
 def _auto_should_try_cuda() -> bool:
     """Return whether --device auto should prefer the isolated CUDA path."""
-    try:
-        import ctranslate2
-
-        if not ctranslate2.get_supported_compute_types("cuda"):
-            return False
-    except Exception:
+    smi_path = find_nvidia_smi()
+    if not smi_path:
         return False
-
     try:
         smi = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits"],
+            [smi_path, "--query-gpu=name", "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -436,7 +479,7 @@ def _print_child_output(result: subprocess.CompletedProcess[str]) -> None:
     """Relay child stdout/stderr to the parent streams."""
     if result.stdout:
         print(result.stdout, end="")
-    if result.stderr:
+    if result.stderr and not getattr(result, "stderr_streamed", False):
         print(result.stderr, end="", file=sys.stderr)
 
 
@@ -470,13 +513,26 @@ def _cuda_failure_report(
     )
 
 
+def _ensure_cpu_compute(args: argparse.Namespace, fallback: bool = False) -> None:
+    if args.compute_type in {"float16", "int8_float16"}:
+        if not fallback:
+            raise ValueError(
+                f"Compute type {args.compute_type} is incompatible with CPU; use int8 or float32"
+            )
+        print(f"Using int8 for CPU fallback instead of {args.compute_type}", file=sys.stderr)
+        args.compute_type = "int8"
+
+
 def _run_parent(args: argparse.Namespace) -> None:
     """Run the CLI, isolating CUDA so native crashes cannot be silent."""
     if args.device == "cpu":
+        _ensure_cpu_compute(args)
         _run_cli(args)
         return
 
     if args.device == "auto" and not _auto_should_try_cuda():
+        args.device = "cpu"
+        _ensure_cpu_compute(args)
         _run_cli(args)
         return
 
@@ -500,6 +556,7 @@ def _run_parent(args: argparse.Namespace) -> None:
         file=sys.stderr,
     )
     args.device = "cpu"
+    _ensure_cpu_compute(args, fallback=True)
     _run_cli(args)
 
 
@@ -524,13 +581,22 @@ def main():
     _add_arguments(parser)
     args = parser.parse_args()
 
+    if not Path(args.input).is_file():
+        parser.error(f"Input file not found: {args.input}")
+    if not args.detect_language and not args.output_dir:
+        parser.error("--output-dir is required for transcription")
+    if args.output_dir and Path(args.output_dir).exists() and not Path(args.output_dir).is_dir():
+        parser.error("--output-dir must be a directory")
     ensure_runtime_dependencies()
 
     if args._video2pr_worker:
         _run_worker(args)
         return
 
-    _run_parent(args)
+    try:
+        _run_parent(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

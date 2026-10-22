@@ -10,7 +10,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,6 +24,7 @@ from diagnostics import (  # noqa: E402
     PYTHON_EXCEPTION_MARKER,
     classify_worker_failure,
     collect_cuda_diagnostics,
+    find_nvidia_smi,
     tail_text,
 )
 
@@ -34,12 +34,7 @@ def _find_nvidia_smi():
 
     Returns the path string or None.
     """
-    exe = shutil.which("nvidia-smi")
-    if exe is None and platform.system() == "Windows":
-        fallback = r"C:\Windows\System32\nvidia-smi.exe"
-        if Path(fallback).exists():
-            exe = fallback
-    return exe
+    return find_nvidia_smi()
 
 
 def _run_nvidia_smi_query():
@@ -106,12 +101,12 @@ def _check_ctranslate2_cuda():
 
         supported = ctranslate2.get_supported_compute_types("cuda")
         return True, len(supported) > 0, sorted(supported)
-    except (ImportError, RuntimeError, Exception):
+    except Exception:
         try:
             import ctranslate2  # noqa: F401
 
             return True, False, []
-        except ImportError:
+        except Exception:
             return False, False, []
 
 
@@ -240,10 +235,8 @@ def check_gpu():
 
     # Build install guidance if GPU exists but CTranslate2 can't use CUDA
     install_command = None
-    if gpu_name and not ct2_cuda:
-        # NVIDIA GPU present but CTranslate2 lacks CUDA support
-        # This typically means CUDA toolkit needs to be installed
-        install_command = "pip install --upgrade ctranslate2"
+    if gpu_name and not ct2_installed:
+        install_command = "python -m pip install ctranslate2"
 
     # Build message
     if device == "cuda":
@@ -279,6 +272,18 @@ def check_gpu():
         ),
         "gpu_available": gpu_available,
         "install_command": install_command,
+        "setup_url": "https://github.com/SYSTRAN/faster-whisper#gpu",
+        "failure_stage": (
+            None
+            if gpu_available
+            else "import"
+            if not ct2_installed
+            else "driver_or_compute_types"
+            if gpu_name and not ct2_cuda
+            else "model_load_or_inference"
+            if gpu_name
+            else "hardware_detection"
+        ),
         "message": msg,
     }
 
