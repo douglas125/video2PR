@@ -18,7 +18,11 @@ def import_script(name: str):
     mod = importlib.util.module_from_spec(spec)
     # Temporarily add to sys.modules so relative imports work
     sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
+    sys.path.insert(0, str(script_path.parent))
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path.pop(0)
     return mod
 
 

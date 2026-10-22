@@ -343,3 +343,17 @@ def test_main_parses_gpu_json_with_banner(capsys):
 
     out = capsys.readouterr().out
     assert "GPU: RTX 4090 (CUDA 12.4) — OK" in out
+
+
+def test_parse_enclosing_json_before_nested_object():
+    payload = '{"envs": [], "other": [\n{}\n]}'
+    assert check_deps.parse_json_output(payload) == {"envs": [], "other": [{}]}
+
+
+@pytest.mark.parametrize("payload", ["{}", '{"ffmpeg": true}', '{"ffmpeg": "true"}'])
+def test_missing_dependency_keys_fail_closed(payload):
+    with patch("check_deps.subprocess.run", return_value=CompletedProcess([], 0, payload, "")):
+        result = check_deps.check_deps_in_env("conda")
+    assert result["ffprobe"] is False
+    assert result["faster-whisper"] is False
+    assert all(isinstance(v, bool) for v in result.values())

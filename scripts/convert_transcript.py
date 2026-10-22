@@ -2,11 +2,13 @@
 """Parse external transcripts (Google Meet, MS Teams, Zoom) into canonical JSON format."""
 
 import argparse
-import json
+import html
+import math
 import re
-import shutil
 import sys
 from pathlib import Path
+
+from artifacts import json_bytes, write_outputs
 
 
 def detect_format(input_path: Path) -> str:
@@ -18,7 +20,7 @@ def detect_format(input_path: Path) -> str:
     if ext == ".sbv":
         return "sbv"
 
-    content = input_path.read_text(encoding="utf-8", errors="replace")
+    content = input_path.read_text(encoding="utf-8-sig")
 
     if ext == ".vtt" or content.strip().startswith("WEBVTT"):
         # Teams VTT has <v Speaker> tags
@@ -46,17 +48,13 @@ def detect_format(input_path: Path) -> str:
     if re.search(r"^\d+:\d+:\d+\.\d+,", content, re.MULTILINE):
         return "sbv"
 
-    print(f"Could not detect transcript format for {input_path}", file=sys.stderr)
-    sys.exit(1)
+    if ext == ".txt" and re.search(r"^[^:\n]+:\s+\S", content, re.MULTILINE):
+        return "untimed_txt"
+    raise ValueError(f"Could not detect transcript format for {input_path}")
 
 
 def parse_sbv_timestamp(ts: str) -> float:
-    """Parse SBV timestamp (H:MM:SS.mmm) to seconds."""
-    match = re.match(r"(\d+):(\d+):(\d+)\.(\d+)", ts.strip())
-    if not match:
-        return 0.0
-    h, m, s, ms = match.groups()
-    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+    return parse_vtt_timestamp(ts)
 
 
 def parse_sbv(content: str) -> list[dict]:
@@ -99,129 +97,91 @@ def parse_sbv(content: str) -> list[dict]:
 
 
 def parse_vtt_timestamp(ts: str) -> float:
-    """Parse VTT timestamp (HH:MM:SS.mmm) to seconds."""
-    match = re.match(r"(\d+):(\d+):(\d+)\.(\d+)", ts.strip())
+    """Parse a complete timestamp; never turn malformed input into time zero."""
+    match = re.fullmatch(r"(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{1,3})", ts.strip())
     if not match:
-        # Try MM:SS.mmm format
-        match = re.match(r"(\d+):(\d+)\.(\d+)", ts.strip())
-        if match:
-            m, s, ms = match.groups()
-            return int(m) * 60 + int(s) + int(ms) / 1000
-        return 0.0
-    h, m, s, ms = match.groups()
-    return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+        raise ValueError(f"Invalid transcript timestamp: {ts}")
+    h, m, sec, fraction = match.groups()
+    if int(m) >= 60 or int(sec) >= 60:
+        raise ValueError(f"Invalid transcript timestamp: {ts}")
+    return int(h or 0) * 3600 + int(m) * 60 + int(sec) + float("0." + fraction)
 
 
-def parse_teams_vtt(content: str) -> list[dict]:
-    """Parse MS Teams VTT format with <v Name> speaker tags."""
+def split_speaker(text: str) -> tuple[str | None, str]:
+    match = re.match(r"^([^:\n]+):[ \t]+(.+)$", text, re.DOTALL)
+    labels = {"note", "time", "update", "action", "topic", "summary", "status"}
+    if match:
+        candidate = match.group(1).strip()
+        if candidate and candidate[0].isupper() and candidate.casefold() not in labels:
+            return candidate, match.group(2).strip()
+    return None, text
+
+
+def parse_vtt(content: str, inline_speakers: bool) -> list[dict]:
+    """Parse cue blocks once; comments must begin a separate NOTE block."""
+    content = content.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
     segments = []
-    # Remove WEBVTT header and any NOTE blocks
-    content = re.sub(r"^WEBVTT.*?\n\n", "", content, flags=re.DOTALL)
-    content = re.sub(r"NOTE.*?\n\n", "", content, flags=re.DOTALL)
-
-    blocks = re.split(r"\n\n+", content.strip())
-
-    for block in blocks:
-        lines = block.strip().split("\n")
-        if not lines:
+    for block in re.split(r"\n[ \t]*\n+", content.strip()):
+        lines = block.strip().splitlines()
+        if not lines or re.match(r"^(?:WEBVTT|NOTE|STYLE|REGION)(?:[ \t]|$)", lines[0]):
             continue
-
-        # Find timestamp line
-        ts_line = None
-        text_lines = []
-        for line in lines:
-            ts_match = re.match(r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line)
-            if not ts_match and re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line):
-                ts_match = re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line)
-            if ts_match:
-                ts_line = ts_match
-            elif ts_line is not None:
-                text_lines.append(line)
-
-        if not ts_line or not text_lines:
+        timestamp_index = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        if timestamp_index is None:
+            print("Warning: skipped VTT block without timestamps", file=sys.stderr)
             continue
-
-        start = parse_vtt_timestamp(ts_line.group(1))
-        end = parse_vtt_timestamp(ts_line.group(2))
-        text = "\n".join(text_lines).strip()
-
-        # Check for <v Name> speaker tags (MS Teams format)
+        match = re.fullmatch(r"(\S+)\s+-->\s+(\S+)(?:[ \t]+.*)?", lines[timestamp_index])
+        try:
+            if not match:
+                raise ValueError("Malformed cue timing")
+            start, end = (parse_vtt_timestamp(ts) for ts in match.groups())
+            if end <= start:
+                raise ValueError("Cue end must follow start")
+        except ValueError as exc:
+            print(f"Warning: skipped VTT cue: {exc}", file=sys.stderr)
+            continue
+        text = "\n".join(lines[timestamp_index + 1 :]).strip()
         speaker = None
-        v_match = re.match(r"<v\s+([^>]+)>(.*?)(?:</v>)?$", text, re.DOTALL)
-        if v_match:
-            speaker = v_match.group(1).strip()
-            text = v_match.group(2).strip()
-
-        segments.append(
-            {
-                "start": start,
-                "end": end,
-                "text": text,
-                "speaker": speaker,
-                "words": [],
-            }
-        )
-
+        voice = re.match(r"<v(?:\.[^ >]+)*[ \t]+([^>]+)>", text)
+        if voice:
+            speaker = html.unescape(voice.group(1).strip())
+        text = html.unescape(re.sub(r"<[^>]*>", "", text)).strip()
+        if speaker is None and inline_speakers:
+            speaker, text = split_speaker(text)
+        if text:
+            segments.append(
+                {"start": start, "end": end, "text": text, "speaker": speaker, "words": []}
+            )
     return segments
 
 
+def parse_teams_vtt(content: str) -> list[dict]:
+    return parse_vtt(content, inline_speakers=False)
+
+
 def parse_zoom_vtt(content: str) -> list[dict]:
-    """Parse Zoom VTT format with inline 'Speaker Name: text' speaker attribution."""
+    return parse_vtt(content, inline_speakers=True)
+
+
+def parse_untimed(content: str) -> list[dict]:
+    """Preserve speaker-prefixed text with explicitly unknown timing."""
     segments = []
-    # Remove WEBVTT header and any metadata lines (Kind:, Language:)
-    content = re.sub(r"^WEBVTT.*?\n\n", "", content, flags=re.DOTALL)
-    content = re.sub(r"NOTE.*?\n\n", "", content, flags=re.DOTALL)
-
-    blocks = re.split(r"\n\n+", content.strip())
-
-    for block in blocks:
-        lines = block.strip().split("\n")
-        if not lines:
+    for line in content.splitlines():
+        if not line.strip():
             continue
-
-        # Find timestamp line
-        ts_line = None
-        text_lines = []
-        for line in lines:
-            ts_match = re.match(r"(\d+:\d+:\d+\.\d+)\s*-->\s*(\d+:\d+:\d+\.\d+)", line)
-            if not ts_match and re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line):
-                ts_match = re.match(r"(\d+:\d+\.\d+)\s*-->\s*(\d+:\d+\.\d+)", line)
-            if ts_match:
-                ts_line = ts_match
-            elif ts_line is not None:
-                text_lines.append(line)
-
-        if not ts_line or not text_lines:
-            continue
-
-        start = parse_vtt_timestamp(ts_line.group(1))
-        end = parse_vtt_timestamp(ts_line.group(2))
-        text = "\n".join(text_lines).strip()
-
-        # Zoom VTT: "Speaker Name: text" inline format
-        speaker = None
-        # Match "Name: text" but avoid false positives on common patterns
-        # like "Time: 3pm" or "Note: something" by requiring at least 2 words
-        # or a capitalized multi-word name
-        speaker_match = re.match(r"^([A-Z][\w\s.-]+?):\s+(.+)$", text, re.DOTALL)
-        if speaker_match:
-            candidate_speaker = speaker_match.group(1).strip()
-            # Avoid single common words that look like labels, not names
-            label_words = {"note", "time", "update", "action", "topic", "summary", "status"}
-            if candidate_speaker.lower() not in label_words:
-                speaker = candidate_speaker
-                text = speaker_match.group(2).strip()
-
-        segments.append(
-            {
-                "start": start,
-                "end": end,
-                "text": text,
-                "speaker": speaker,
-                "words": [],
-            }
-        )
-
+        speaker, text = split_speaker(line.strip())
+        if speaker is None and segments:
+            segments[-1]["text"] += "\n" + text
+        else:
+            segments.append(
+                {
+                    "start": 0.0,
+                    "end": 0.0,
+                    "text": text,
+                    "speaker": speaker,
+                    "words": [],
+                    "timing_source": "unknown",
+                }
+            )
     return segments
 
 
@@ -315,6 +275,10 @@ def parse_teams_docx(input_path: Path) -> list[dict]:
     segments = []
     current_speaker = None
     current_start = 0.0
+    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    if not any(re.match(r"^(.+?)\s{2,}(\d+:\d+:\d+)\s*$", t) for t in paragraphs):
+        return parse_untimed("\n".join(paragraphs))
+    seen_header = False
     current_texts = []
 
     for para in doc.paragraphs:
@@ -326,6 +290,7 @@ def parse_teams_docx(input_path: Path) -> list[dict]:
         # Pattern: "Speaker Name  0:12:34"
         header_match = re.match(r"^(.+?)\s{2,}(\d+:\d+:\d+)\s*$", text)
         if header_match:
+            seen_header = True
             # Save previous segment
             if current_texts:
                 segments.append(
@@ -344,7 +309,7 @@ def parse_teams_docx(input_path: Path) -> list[dict]:
                 int(ts_parts[0]) * 3600 + int(ts_parts[1]) * 60 + int(ts_parts[2])
             )
             current_texts = []
-        else:
+        elif seen_header:
             current_texts.append(text)
 
     # Save final segment
@@ -380,13 +345,14 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
     if fmt == "teams_docx":
         segments = parse_teams_docx(input_path)
     else:
-        content = input_path.read_text(encoding="utf-8", errors="replace")
+        content = input_path.read_text(encoding="utf-8-sig")
         parsers = {
             "sbv": parse_sbv,
             "teams_vtt": parse_teams_vtt,
             "zoom_vtt": parse_zoom_vtt,
             "zoom_txt": parse_zoom_txt,
             "google_txt": parse_google_txt,
+            "untimed_txt": parse_untimed,
             "vtt": parse_zoom_vtt,  # generic VTT uses zoom parser (handles both)
         }
         parser = parsers.get(fmt)
@@ -395,21 +361,28 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
             sys.exit(1)
         segments = parser(content)
 
+    if not segments:
+        raise ValueError("No recognized transcript content; existing outputs were preserved")
+    for seg in segments:
+        if (
+            not all(
+                isinstance(seg[k], (int, float)) and math.isfinite(seg[k]) and seg[k] >= 0
+                for k in ("start", "end")
+            )
+            or seg["end"] < seg["start"]
+        ):
+            raise ValueError("Transcript contains invalid or reversed timestamps")
+        if "timing_source" not in seg:
+            seg["timing_source"] = (
+                "start_observed_end_estimated"
+                if fmt in {"google_txt", "zoom_txt", "teams_docx"}
+                else "observed"
+            )
     print(f"Parsed {len(segments)} segments")
 
     has_speakers = any(seg["speaker"] for seg in segments)
-    has_timestamps = any(seg["start"] > 0 or seg["end"] > 0 for seg in segments)
+    has_timestamps = all(seg["timing_source"] != "unknown" for seg in segments)
 
-    # Write canonical transcript.json
-    transcript = {"segments": segments}
-    transcript_path = output_dir / "transcript.json"
-    transcript_path.write_text(
-        json.dumps(transcript, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    print(f"Transcript saved to {transcript_path}")
-
-    # Write metadata
     format_labels = {
         "sbv": "google_meet_sbv",
         "teams_vtt": "ms_teams_vtt",
@@ -426,18 +399,17 @@ def convert(input_path: Path, output_dir: Path, fmt: str) -> None:
         "original_file": input_path.name,
         "segment_count": len(segments),
     }
-    meta_path = output_dir / "external_transcript_meta.json"
-    meta_path.write_text(
-        json.dumps(meta, indent=2, ensure_ascii=False),
-        encoding="utf-8",
+    transcript = {"segments": segments}
+    write_outputs(
+        output_dir,
+        {
+            "transcript.json": json_bytes(transcript),
+            "external_transcript.json": json_bytes(transcript),
+            f"external_transcript_original{input_path.suffix}": input_path.read_bytes(),
+            "external_transcript_meta.json": json_bytes(meta),
+        },
     )
-    print(f"Metadata saved to {meta_path}")
-
-    # Copy original file
-    dest_ext = input_path.suffix
-    original_copy = output_dir / f"external_transcript_original{dest_ext}"
-    shutil.copy2(input_path, original_copy)
-    print(f"Original copied to {original_copy}")
+    print(f"Transcript and metadata saved to {output_dir}")
 
 
 def main():
@@ -451,6 +423,7 @@ def main():
         default="auto",
         choices=[
             "auto",
+            "untimed_txt",
             "sbv",
             "vtt",
             "teams_vtt",
@@ -470,7 +443,10 @@ def main():
         print(f"Input file not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
-    convert(input_path, output_dir, args.format)
+    try:
+        convert(input_path, output_dir, args.format)
+    except (ValueError, OSError) as exc:
+        parser.exit(1, f"Conversion failed: {exc}\n")
 
 
 if __name__ == "__main__":

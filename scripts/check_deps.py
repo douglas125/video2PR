@@ -30,20 +30,6 @@ def parse_json_output(output: str):
     """
     decoder = json.JSONDecoder()
 
-    for line in output.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            value, end = decoder.raw_decode(line)
-        except json.JSONDecodeError:
-            continue
-        if line[end:].strip():
-            continue
-        if not isinstance(value, (dict, list)):  # noqa: UP038 - bootstrap Python may be <3.10.
-            continue
-        return value
-
     for idx, char in enumerate(output):
         if char not in "{[":
             continue
@@ -125,7 +111,7 @@ def env_exists(env_name, conda_path="conda"):
 def check_deps_in_env(conda_path="conda"):
     """Check all CLI tools and Python imports in a single conda run call.
 
-    Returns (cli_results, import_results) where each is a dict of name -> bool.
+    Returns a validated dictionary of every required dependency name to bool.
     """
     # Build a single Python script that checks everything
     checks = []
@@ -134,7 +120,7 @@ def check_deps_in_env(conda_path="conda"):
     for name, module in PYTHON_IMPORTS.items():
         checks.append(
             f"try:\n    __import__({module!r}); results[{name!r}] = True\n"
-            f"except ImportError:\n    results[{name!r}] = False"
+            f"except Exception:\n    results[{name!r}] = False"
         )
 
     script = (
@@ -158,12 +144,13 @@ def check_deps_in_env(conda_path="conda"):
         with contextlib.suppress(OSError):
             os.unlink(tmp_path)
     if result.returncode != 0:
+        print(f"Dependency probe failed: {result.stderr.strip()}", file=sys.stderr)
         # Fallback: report everything as missing
         all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
         return dict.fromkeys(all_names, False)
     payload = parse_json_output(result.stdout)
     if isinstance(payload, dict):
-        return payload
+        return {name: payload.get(name) is True for name in CLI_TOOLS + list(PYTHON_IMPORTS)}
 
     all_names = CLI_TOOLS + list(PYTHON_IMPORTS.keys())
     return dict.fromkeys(all_names, False)
@@ -192,7 +179,8 @@ def main():
 
     results = check_deps_in_env(conda_path)
     missing = []
-    for name, found in results.items():
+    for name in CLI_TOOLS + list(PYTHON_IMPORTS):
+        found = results.get(name) is True
         status = "OK" if found else "MISSING"
         print(f"  {name}: {status}")
         if not found:
