@@ -8,8 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from artifacts import json_bytes, source_identity, validate_source
 from check_update import replace_paths
+from diagnostics import json_bytes, source_identity, validate_source
 
 
 def get_metadata(input_path: Path) -> dict:

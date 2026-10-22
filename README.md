@@ -37,11 +37,11 @@ python /path/to/video2PR/install_video2pr.py /path/to/your-project --assistants 
 python /path/to/video2PR/install_video2pr.py /path/to/your-project --dry-run
 ```
 
-Each skill folder is fully self-contained - scripts and environment.yml are copied alongside the SKILL.md. No files are placed outside the skill folder.
+Each skill folder is fully self-contained - scripts and environment.yml are copied alongside the SKILL.md. Copilot also installs `.github/agents/video2pr.agent.md`.
 
 ### Updating
 
-The skill checks for updates on each run and notifies you if a newer version is available. To apply, run the updater from the skill directory you installed:
+The skill checks dependencies, then checks for updates on each run and notifies you if a newer version is available. To apply, run the updater from the skill directory you installed:
 
 ```bash
 conda run -n video2pr python .claude/skills/video2pr/scripts/check_update.py --apply
@@ -49,17 +49,10 @@ conda run -n video2pr python .agents/skills/video2pr/scripts/check_update.py --a
 conda run -n video2pr python .github/skills/video2pr/scripts/check_update.py --apply
 ```
 
-<details>
-<summary>Manual installation</summary>
+Use the installer for local and offline installation. The source skill folders contain generated prompts and assistant metadata; copying them alone omits runtime scripts and path rewriting. To replace an existing installation use `--force`; replacement starts only after staging succeeds. Installation into the source repository itself is rejected.
 
-Manual install is a folder copy, and the source/destination paths are the same on Windows, macOS, and Linux:
 
-- Claude Code: copy `.claude/skills/video2pr/` into `<project>/.claude/skills/video2pr/`
-- Codex CLI: copy `.agents/skills/video2pr/` into `<project>/.agents/skills/video2pr/`
-- GitHub Copilot CLI: copy `.github/skills/video2pr/` into `<project>/.github/skills/video2pr/`
-- GitHub Copilot CLI: also copy `.github/agents/video2pr.agent.md` into `<project>/.github/agents/video2pr.agent.md`
-
-</details>
+Updates download a complete payload from one commit before replacing files. Failed downloads preserve the installation; replacement errors restore backups. Revision metadata changes only after success. Older installations without a revision are offered a refresh. Environment changes may require `conda env update -f <installed-skill>/environment.yml`.
 
 <details>
 <summary>Editing the skill prompt</summary>
@@ -82,7 +75,7 @@ In your coding assistant, from your project directory:
 /video2pr path/to/meeting.mp4
 ```
 
-Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`).
+Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`). `source.json` records recording path, size, and modification time. For a different or changed recording with the same basename, choose a different output directory. Legacy outputs without provenance require explicit confirmation before reuse.
 
 ## What It Does
 
@@ -93,7 +86,7 @@ Output goes to `.video2pr/<video-name>/` (add `.video2pr/` to your `.gitignore`)
 5. Produces `summary.md` with topics, action items, decisions, visual reference commands, and a link to the implementation plan
 6. Optionally creates GitHub Issues from plan tasks (each confirmed individually before creation)
 
-If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically. Zoom, Google Meet, and MS Teams transcript formats are all auto-detected.
+If a transcript file sits next to the video (same name, `.sbv`/`.vtt`/`.txt`/`.docx` extension), it's picked up automatically. Zoom, Google Meet, and MS Teams formats are auto-detected. Speaker-prefixed TXT and untimed DOCX imports are preserved in `external_transcript.json` for enrichment after Whisper supplies timestamps. TXT/DOCX end times may be estimated; metadata distinguishes observed starts from unknown timing. Unrecognized imports fail without replacing prior transcripts. Untimed imports are stored separately; a prior timestamped transcript survives until Whisper successfully publishes its replacement.
 
 ## Whisper Model Choices
 
@@ -107,7 +100,7 @@ The `--model` flag controls the quality/speed tradeoff for transcription:
 | `large-v3` | 1550M | ~0.5x realtime | Maximum accuracy, multilingual content |
 | `turbo` | 809M | ~3x realtime | Fast with good accuracy (faster-whisper only) |
 
-Speed estimates assume GPU acceleration. CPU-only runs are roughly 5-20x slower. The skill prompts you to install CUDA support if a compatible GPU is detected but not configured. On Windows, CUDA is considered ready only after a tiny real inference smoke test succeeds; `nvidia-smi`, imports, and CTranslate2 supported compute types alone are not enough.
+Speed estimates depend on hardware, model, language, and decoding settings; treat them as rough guidance. The skill reports GPU diagnostics and relevant setup guidance when acceleration is unavailable. On Windows, CUDA is considered ready only after a tiny real inference smoke test succeeds; `nvidia-smi`, imports, and CTranslate2 supported compute types alone are not enough.
 
 ## Standalone Scripts
 
@@ -155,20 +148,14 @@ Use the ISO 639-1 code (`en`, `pt`, `es`, `fr`, `de`, `ja`, ...). The skill will
 <details>
 <summary>Transcription appears to hang</summary>
 
-On CPU, the `small` model runs at roughly 1–2× realtime — a 60-minute meeting can take 30–60 minutes. The progress reporter prints completed segments as they're produced; if you see segment counts increasing, it's working. To go faster, install GPU acceleration (see next section) or switch to `--model base` for a quick draft.
+CPU processing time varies with hardware and decoding settings. Progress appears after the first completed segment, then at most every five seconds as more segments complete. CUDA worker stderr streams during processing. Model downloads and model loading precede segment progress. To go faster, install GPU acceleration (see next section) or switch to `--model base` for a quick draft.
 
 </details>
 
 <details>
 <summary>"GPU detected but CTranslate2 is CPU-only"</summary>
 
-This means `nvidia-smi` finds your card but the installed CTranslate2 wheel doesn't include CUDA support (a common state on fresh installs). The skill prompts you to fix it during Phase 1. The manual command is:
-
-```bash
-conda run -n video2pr pip install --upgrade ctranslate2
-```
-
-After installing, re-run `python scripts/check_gpu.py` to confirm. If the GPU still isn't picked up, your NVIDIA driver may be older than what the current CTranslate2 wheel requires — check the [CTranslate2 release notes](https://github.com/OpenNMT/CTranslate2/releases) for the minimum driver version.
+A hardware query or compute-type failure alone cannot establish whether a CTranslate2 build is CPU-only. Inspect the failure stage and diagnostics: import errors, driver/runtime problems, model downloads, and actual inference failures need different repairs. CUDA execution also requires compatible cuBLAS and cuDNN libraries; upgrading CTranslate2 alone does not install those libraries. Follow the platform-specific [faster-whisper GPU requirements](https://github.com/SYSTRAN/faster-whisper#gpu), then rerun `conda run -n video2pr python scripts/check_gpu.py`.
 
 </details>
 
@@ -196,10 +183,29 @@ The three `SKILL.md` files under `.claude/`, `.agents/`, and `.github/` are gene
 |------|-------------|
 | `audio.wav` | 16kHz mono audio |
 | `metadata.json` | ffprobe video metadata |
+| `source.json` | Recording identity for safe reuse |
 | `transcript.json` | Segments with timestamps, text, optional speaker/word data |
 | `transcript.srt` | SRT subtitles (Whisper-generated only) |
 | `plan.md` | Codebase-grounded implementation plan with prioritized tasks |
 | `progress.md` | Task completion tracker (persists across runs) |
 | `summary.md` | Structured meeting analysis with implementation plan summary |
-| `external_transcript_meta.json` | Source format info (external transcript only) |
+| `external_transcript_meta.json` | Source format and timing provenance |
+| `external_transcript.json` | Preserved parsed import for speaker enrichment |
 | `external_transcript_original.*` | Copy of original transcript (external only) |
+
+
+## Development and validation
+
+Package and interpreter versions in `environment.yml` are intentionally unconstrained. Setup should select the latest mutually compatible releases for the current platform and verify them with an inference smoke test. If a dependency fails, inspect current upstream compatibility guidance and adjust the local environment without adding repository pins. Helpers are tested on Python 3.12, 3.13, and 3.14; CPU integration tests run on Windows and Linux with Python 3.13 as a test target, not an installation requirement. GPU behavior has mocked failure-path tests and a separate opt-in hardware smoke check.
+
+```bash
+python -m pytest -q --ignore=tests/test_e2e_pipeline.py
+conda run -n video2pr python -m pytest -q tests/test_e2e_pipeline.py
+ruff check .
+ruff format --check .
+python scripts/sync_skill.py --check
+```
+
+Integration fixtures use FFV1 video and PCM audio, avoiding optional H.264 encoders. A synthetic speech fixture exercises nonempty text and word timestamps without requiring exact recognition. Issue linkage and implementation completion are tracked separately, with persistent task IDs across reruns.
+
+Install development tools with `python -m pip install ruff pre-commit`. Ruff is installed without a version constraint in CI; local pre-commit hooks use the Ruff installed in the developer environment. Normalized PCM audio is read directly, and other standalone media is decoded by the required FFmpeg CLI, so transcription does not depend on PyAV container-open keyword compatibility.

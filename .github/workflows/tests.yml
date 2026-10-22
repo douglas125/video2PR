@@ -17,7 +17,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - name: Install ruff
-        run: pip install ruff==0.15.12
+        run: pip install ruff
       - name: ruff check
         run: ruff check .
       - name: ruff format --check
@@ -51,27 +51,27 @@ jobs:
         run: pytest -v --ignore=tests/test_e2e_pipeline.py
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash -el {0}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - name: Create the documented runtime environment
+        uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: "3.13"
-          cache: pip
-
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Install Python deps
-        run: pip install "pytest>=7" "faster-whisper>=1.0,<2.0" "python-docx>=1.0,<2.0" "av>=11,<19"
-
+          activate-environment: video2pr
+          environment-file: environment.yml
+          auto-activate-base: false
       - name: Cache Whisper model
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: whisper-base-${{ runner.os }}
-
-      - name: Run e2e pipeline test
-        run: pytest -v tests/test_e2e_pipeline.py
+      - name: Run CPU integration tests
+        run: python -m pytest -v tests/test_e2e_pipeline.py

@@ -20,7 +20,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from artifacts import json_bytes  # noqa: E402
 from check_update import replace_paths  # noqa: E402
 from diagnostics import (  # noqa: E402
     PYTHON_EXCEPTION_MARKER,
@@ -28,6 +27,8 @@ from diagnostics import (  # noqa: E402
     collect_cuda_diagnostics,
     find_nvidia_smi,
     format_cuda_failure_report,
+    json_bytes,  # noqa: E402
+    read_audio,
 )
 
 CUDA_WORKER_ARG = "--_video2pr-worker"
@@ -132,7 +133,7 @@ def detect_language(
 
     # Use faster-whisper's built-in language detection
     _segments, info = model.transcribe(
-        str(audio_path),
+        read_audio(audio_path),
         beam_size=1,
         vad_filter=True,
     )
@@ -188,7 +189,7 @@ def run_transcription(
         Dict with 'segments' list and 'language' string.
     """
     segments_gen, info = model.transcribe(
-        str(audio_path),
+        read_audio(audio_path),
         word_timestamps=True,
         vad_filter=vad_filter,
         language=language,

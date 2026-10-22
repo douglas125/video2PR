@@ -3,7 +3,7 @@
 import pytest
 from conftest import import_script
 
-artifacts = import_script("artifacts.py")
+artifacts = import_script("diagnostics.py")
 
 
 def test_replaced_recording_cannot_reuse_outputs(tmp_path):
