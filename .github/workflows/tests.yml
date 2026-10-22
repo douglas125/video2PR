@@ -65,7 +65,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Python deps
-        run: pip install pytest faster-whisper python-docx
+        run: pip install "pytest>=7" "faster-whisper>=1.0,<2.0" "python-docx>=1.0,<2.0" "av>=11,<19"
 
       - name: Cache Whisper model
         uses: actions/cache@v4
