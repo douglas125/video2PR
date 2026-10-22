@@ -100,10 +100,16 @@ def replace_paths(replacements: list[tuple[Path, Path]]) -> None:
         raise
     for _, backup in backups:
         if backup is not None:
-            if backup.is_dir():
-                shutil.rmtree(backup)
-            else:
-                backup.unlink()
+            try:
+                if backup.is_dir():
+                    shutil.rmtree(backup)
+                else:
+                    backup.unlink()
+            except OSError as exc:
+                print(
+                    f"Warning: replacement succeeded; retained backup {backup}: {exc}",
+                    file=sys.stderr,
+                )
 
 
 def project_root(script_dir: Path, skill_dir: str) -> Path:
@@ -133,7 +139,12 @@ def load_config(script_dir: Path) -> dict:
         print("CHECK_SKIPPED: No .video2pr_install.json found", file=sys.stderr)
         sys.exit(0)
     with open(config_path, encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+    if not isinstance(config, dict) or not isinstance(config.get("repo"), str):
+        raise ValueError("Install configuration must contain a repository")
+    if config.get("skill_dir") not in SKILL_MD_SOURCES:
+        raise ValueError("Install configuration has an unknown skill directory")
+    return config
 
 
 def fetch_json(url: str) -> dict:
@@ -184,7 +195,11 @@ def check(config: dict) -> bool:
 
 def remote_script_names(content: str) -> list[str]:
     """Read the new updater's literal manifest without executing downloaded code."""
-    for node in ast.parse(content).body:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError as exc:
+        raise ValueError("Downloaded updater is not valid Python") from exc
+    for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "SCRIPT_NAMES" for t in node.targets
         ):
@@ -192,7 +207,6 @@ def remote_script_names(content: str) -> list[str]:
             if (
                 isinstance(names, list)
                 and names
-                and len(set(names)) == len(names)
                 and all(
                     isinstance(n, str)
                     and Path(n).name == n
@@ -201,6 +215,7 @@ def remote_script_names(content: str) -> list[str]:
                     and "\\" not in n
                     for n in names
                 )
+                and len(set(names)) == len(names)
                 and "check_update.py" in names
             ):
                 return names
@@ -275,7 +290,7 @@ def main():
             apply_update(config, script_dir)
         else:
             check(config)
-    except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+    except (urllib.error.URLError, OSError, ValueError, KeyError, SyntaxError) as e:
         if args.apply:
             print(f"UPDATE_FAILED: {e}", file=sys.stderr)
             sys.exit(1)

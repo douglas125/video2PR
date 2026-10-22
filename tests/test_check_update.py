@@ -157,3 +157,27 @@ def test_cli_network_failure_exit_status(monkeypatch, apply, capsys):
         else:
             update.main()
             assert "CHECK_SKIPPED" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("content", ["bad syntax [", "SCRIPT_NAMES = ['check_update.py', []]"])
+def test_invalid_manifest_is_a_controlled_error(content):
+    with pytest.raises(ValueError):
+        update.remote_script_names(content)
+
+
+def test_backup_cleanup_failure_does_not_report_failed_update(tmp_path, monkeypatch, capsys):
+    old = tmp_path / "installed"
+    staged = tmp_path / "staged"
+    old.write_text("old")
+    staged.write_text("new")
+    original_unlink = type(old).unlink
+
+    def unlink(path, *args, **kwargs):
+        if ".video2pr-backup-" in path.name:
+            raise PermissionError("antivirus holds backup")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(old), "unlink", unlink)
+    update.replace_paths([(staged, old)])
+    assert old.read_text() == "new"
+    assert "replacement succeeded" in capsys.readouterr().err

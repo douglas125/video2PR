@@ -83,6 +83,15 @@ def install_all(target: Path, names: list[str], dry_run: bool) -> dict[str, list
             raise ValueError(f"Destination escapes project: {destination}")
         if destination.resolve() == source:
             raise ValueError("Source and destination overlap; install into another project")
+    for name in names:
+        cfg = ASSISTANTS[name]
+        destinations = [target / cfg["skill_dir"]] + [target / dst for _, dst in cfg["root_files"]]
+        for destination in destinations:
+            if any(
+                (REPO_ROOT / src).resolve().is_relative_to(destination.resolve())
+                for _, src, _ in payload
+            ):
+                raise ValueError("Source and destination overlap; install into another project")
     installed = {name: [] for name in names}
     if dry_run:
         for name, src, dst in payload:
@@ -108,7 +117,9 @@ def install_all(target: Path, names: list[str], dry_run: bool) -> dict[str, list
                     )
                 else:
                     shutil.copy2(REPO_ROOT / src, staged)
-                hashes[dst] = hashlib.sha256(staged.read_bytes()).hexdigest()
+                hashes[dst] = hashlib.sha256(
+                    staged.read_text(encoding="utf-8").encode("utf-8")
+                ).hexdigest()
                 installed[name].append(dst.removeprefix(skill_dir + "/"))
             config = {
                 "repo": "douglas125/video2PR",
