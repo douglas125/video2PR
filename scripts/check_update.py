@@ -21,6 +21,7 @@ GITHUB_API = "https://api.github.com/repos/{repo}/commits"
 GITHUB_RAW = "https://raw.githubusercontent.com/{repo}/{branch}/{path}"
 
 SCRIPT_NAMES = [
+    "artifacts.py",
     "check_deps.py",
     "check_gpu.py",
     "check_update.py",

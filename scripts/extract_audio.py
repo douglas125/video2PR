@@ -5,7 +5,11 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+from artifacts import json_bytes, source_identity, validate_source
+from check_update import replace_paths
 
 
 def get_metadata(input_path: Path) -> dict:
@@ -72,17 +76,25 @@ def main():
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save metadata
-    print(f"Extracting metadata from {input_path.name}...")
-    metadata = get_metadata(input_path)
-    metadata_path = output_dir / "metadata.json"
-    metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    print(f"Metadata saved to {metadata_path}")
-
-    # Extract audio
-    print(f"Extracting audio from {input_path.name}...")
-    audio_path = extract_audio(input_path, output_dir)
-    print(f"Audio saved to {audio_path}")
+    try:
+        validate_source(input_path, output_dir)
+        print(f"Extracting metadata and audio from {input_path.name}...")
+        metadata = get_metadata(input_path)
+        with tempfile.TemporaryDirectory(prefix=".audio-", dir=output_dir) as tmp:
+            stage = Path(tmp)
+            audio_path = extract_audio(input_path, stage)
+            (stage / "metadata.json").write_bytes(json_bytes(metadata))
+            (stage / "source.json").write_bytes(json_bytes(source_identity(input_path)))
+            replace_paths(
+                [
+                    (audio_path, output_dir / "audio.wav"),
+                    (stage / "metadata.json", output_dir / "metadata.json"),
+                    (stage / "source.json", output_dir / "source.json"),
+                ]
+            )
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f"Audio extraction failed: {exc}\n")
+    print(f"Audio saved to {output_dir / 'audio.wav'}")
 
 
 if __name__ == "__main__":

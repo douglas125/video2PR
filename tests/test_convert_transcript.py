@@ -20,7 +20,8 @@ def test_sbv_timestamp_with_hours():
 
 
 def test_sbv_timestamp_invalid():
-    assert ct.parse_sbv_timestamp("invalid") == 0.0
+    with pytest.raises(ValueError):
+        ct.parse_sbv_timestamp("invalid")
 
 
 # ── VTT timestamp parsing ──────────────────────────────────────────
@@ -389,3 +390,75 @@ def test_convert_zoom_vtt_pipeline(tmp_path):
     assert data["segments"][0]["speaker"] == "Alice"
     assert data["segments"][1]["speaker"] == "Bob"
     assert meta["source"] == "zoom_vtt"
+
+
+@pytest.mark.parametrize("parser", [ct.parse_teams_vtt, ct.parse_zoom_vtt])
+def test_note_in_speech_is_not_a_comment(parser):
+    content = (
+        "WEBVTT\n\nNOTE actual comment\nignore me\n\n"
+        "00:00:01.000 --> 00:00:02.000\nPlease keep NOTE of this.\n\n"
+        "00:00:03.000 --> 00:00:04.000\nSecond cue.\n\n"
+    )
+    segments = parser(content)
+    assert [s["text"] for s in segments] == ["Please keep NOTE of this.", "Second cue."]
+
+
+def test_unicode_leading_name_and_markup():
+    segments = ct.parse_zoom_vtt(
+        "WEBVTT\n\n00:01.000 --> 00:02.000 align:start\n"
+        "\u00c9rika Silva: <b>Hello</b> &amp; welcome"
+    )
+    assert segments[0]["speaker"] == "\u00c9rika Silva"
+    assert segments[0]["text"] == "Hello & welcome"
+
+
+def test_malformed_import_preserves_prior_outputs(tmp_path):
+    source = tmp_path / "meeting.vtt"
+    source.write_text("WEBVTT\n\nmalformed")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "transcript.json").write_text("previous")
+    with pytest.raises(ValueError, match="No recognized"):
+        ct.convert(source, out, "auto")
+    assert (out / "transcript.json").read_text() == "previous"
+
+
+def test_untimed_import_is_preserved_for_speaker_enrichment(tmp_path):
+    source = tmp_path / "meeting.txt"
+    source.write_text("Alice: Build the endpoint.\nBob: Add caching.")
+    out = tmp_path / "out"
+    ct.convert(source, out, "auto")
+    meta = json.loads((out / "external_transcript_meta.json").read_text())
+    assert meta["has_timestamps"] is False
+    assert meta["has_speakers"] is True
+    assert (out / "external_transcript.json").read_bytes() == (out / "transcript.json").read_bytes()
+
+
+def test_untimed_docx_never_invents_timing(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules,
+        "docx",
+        SimpleNamespace(
+            Document=lambda path: SimpleNamespace(
+                paragraphs=[SimpleNamespace(text="Alice: Please fix the bug.")]
+            )
+        ),
+    )
+    source = tmp_path / "meeting.docx"
+    source.write_bytes(b"fake DOCX; Document is mocked")
+    out = tmp_path / "out"
+    ct.convert(source, out, "auto")
+    meta = json.loads((out / "external_transcript_meta.json").read_text())
+    assert meta["has_timestamps"] is False
+    segment = json.loads((out / "transcript.json").read_text())["segments"][0]
+    assert segment["start"] == segment["end"] == 0
+    assert segment["speaker"] == "Alice"
+
+
+def test_timestamp_fraction_and_validation():
+    assert ct.parse_vtt_timestamp("00:01.5") == 1.5
+    with pytest.raises(ValueError):
+        ct.parse_vtt_timestamp("00:61.000")
